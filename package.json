@@ -1,6 +1,6 @@
 {
   "name": "minecraft-block-reader",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Read blocks, block states, and entities from Minecraft structure files and world saves",
   "author": "Ewan Howell <ewanhowell5195>",
   "license": "MPL-2.0",

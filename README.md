@@ -88,12 +88,12 @@ The format is detected from the bytes: every format carries a signature nothing 
 
 ### Worlds
 
-Opening a world scans it without loading it; everything block-level happens on demand through the handle `read` returns. Chunks from 1.18 on are readable; older ones are reported rather than read:
+Opening a world scans it without loading it; everything block-level happens on demand through the handle `read` returns. Chunks from 1.13 on are readable, with pre-1.18 shapes folded to the current one; pre-1.13 chunks are reported rather than read:
 
 | API | Description |
 |---|---|
 | `world.name` | The level name |
-| `world.blocks(box, onProgress?)` | The blocks in a block-coordinate box (`{ x0, y0, z0, x1, y1, z1, includeAir }`, inclusive on every side, y bounds optional): one shared palette, the box's entities, block entity nbt attached. Ungenerated and pre-1.18 chunks aren't errors; the result's `chunks: { read, missing, outdated }` says what the box covered, so an empty result can tell "air" from "unexplored" from "too old" |
+| `world.blocks(box, onProgress?)` | The blocks in a block-coordinate box (`{ x0, y0, z0, x1, y1, z1, includeAir }`, inclusive on every side, y bounds optional): one shared palette, the box's entities, block entity nbt attached. Ungenerated and pre-1.13 chunks aren't errors; the result's `chunks: { read, missing, outdated }` says what the box covered, so an empty result can tell "air" from "unexplored" from "too old" |
 | `world.chunks` | Every stored chunk, as `{ cx, cz, region, index }` |
 | `world.chunk(c)` | A chunk's NBT, with its entities folded in under `Entities` (the game stores them in separate region files) |
 | `world.chunkExtent(c)` | The chunk's occupied `{ top, bottom }`, from the palettes alone |

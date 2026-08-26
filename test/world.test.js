@@ -263,6 +263,70 @@ test("readNBT detects endianness, and the buffer check settles it", async () => 
   await assert.rejects(readNBT(new Uint8Array([10, 0, 0, 99])), /not NBT data/)
 })
 
+// a 17-entry palette forces 5-bit indices, which actually cross long
+// boundaries in the spanning era (4-bit ones never do)
+function levelChunkNbt({ dataVersion, pack, xPos }) {
+  const indices = new Array(4096).fill(0)
+  indices[(1 << 8) | (1 << 4) | 1] = 1
+  indices[(1 << 8) | (0 << 4) | 1] = 2
+  indices[4095] = 16
+  return writeNBT(comp({
+    DataVersion: I(dataVersion),
+    Level: comp({
+      xPos: I(xPos), zPos: I(-1),
+      Sections: list([
+        comp({
+          Y: B(4),
+          Palette: list([
+            comp({ Name: Str("minecraft:air") }),
+            ...Array.from({ length: 16 }, (_, i) => comp({ Name: Str("minecraft:block" + i) }))
+          ]),
+          BlockStates: longs(pack(indices, 5))
+        })
+      ]),
+      TileEntities: list([comp({ x: I(xPos * 16 + 1), y: I(65), z: I(-16), id: Str("minecraft:chest") })]),
+      Entities: list([comp({ Pos: list([D(xPos * 16 + 1.5), D(70), D(-15.5)]), id: Str("minecraft:cow") })])
+    })
+  }))
+}
+
+test("1.13-1.17 Level chunks fold to the current shape", async () => {
+  const spanning = levelChunkNbt({ dataVersion: 2230, pack: packLitematic, xPos: 2 })
+  const aligned = levelChunkNbt({ dataVersion: 2586, pack: packChunk, xPos: 3 })
+  const numeric = writeNBT(comp({
+    DataVersion: I(1343),
+    Level: comp({
+      xPos: I(4), zPos: I(-1),
+      Sections: list([comp({ Y: B(4), Blocks: bytes(new Array(4096).fill(1)), Data: bytes(new Array(2048).fill(0)) })])
+    })
+  }))
+  const world = await read(buildRegion(new Map([
+    [CHUNK_INDEX, spanning], [31 * 32 + 3, aligned], [31 * 32 + 4, numeric]
+  ])), { region: [0, -1] })
+  assert.equal(world.chunks.length, 3)
+
+  const old = world.chunks.find(c => c.cx === 2)
+  const nbt = await world.chunk(old)
+  assert.equal(nbt.xPos, 2)
+  const { palette, blocks, entities } = chunkBlocks(nbt)
+  assert.equal(blocks.length, 3)
+  const at = pos => blocks.find(b => String(b.pos) === String(pos))
+  assert.equal(palette[at([33, 65, -15]).state].id, "minecraft:block0")
+  assert.equal(palette[at([47, 79, -1]).state].id, "minecraft:block15")
+  assert.equal(at([33, 65, -16]).nbt.id, "minecraft:chest")
+  assert.equal(entities.length, 1)
+  assert.equal(entities[0].nbt.id, "minecraft:cow")
+  assert.deepEqual(await world.chunkExtent(old), { top: 79, bottom: 64 })
+
+  const a = chunkBlocks(await world.chunk(world.chunks.find(c => c.cx === 3)))
+  assert.equal(a.blocks.length, 3)
+  assert.equal(a.palette[a.blocks.find(b => String(b.pos) === String([63, 79, -1])).state].id, "minecraft:block15")
+
+  // the numeric pre-flattening chunk stays outdated
+  const r = await world.blocks({ x0: 32, z0: -17, x1: 79, z1: -1 })
+  assert.deepEqual(r.chunks, { read: 2, missing: 3, outdated: 1 })
+})
+
 test("world zip: vanilla and datapack dimensions coexist", async () => {
   const chunk = (id, x = 0, z = 0) => buildRegion(new Map([[x + z * 32, writeNBT(comp({
     xPos: I(x), zPos: I(z),

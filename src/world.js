@@ -271,9 +271,29 @@ function readRegionFile(buf, region) {
 
 // everything a chunk is read for. naming what to keep rather than what to drop
 // means a new game version can add root fields without costing a parse
-const CHUNK_KEEP = new Set(["sections", "block_entities", "xPos", "zPos", "Entities", "Level"])
-// light and biome data hangs off the sections, below the root filter
-const CHUNK_SKIP = new Set(["block_light", "sky_light", "BlockLight", "SkyLight", "biomes"])
+const CHUNK_KEEP = new Set(["sections", "block_entities", "xPos", "zPos", "Entities", "Level", "DataVersion"])
+// light and biome data hangs off the sections, below the root filter; the
+// capitalised names are the same data inside a pre-1.18 Level tag
+const CHUNK_SKIP = new Set(["block_light", "sky_light", "BlockLight", "SkyLight", "biomes", "Biomes", "Heightmaps", "Structures", "UpgradeData"])
+
+// 1.13-1.17 chunks (DataVersion 1451+) are the palette format inside a Level
+// tag with older names; they fold to the current shape here. anything older is
+// numeric-id storage and stays as-is, which readBlocks counts as outdated
+function upgradeChunk(nbt) {
+  const lvl = nbt?.Level
+  if (!lvl || nbt.sections || !(nbt.DataVersion >= 1451)) return nbt
+  const sections = []
+  for (const s of lvl.Sections ?? []) {
+    if (!s?.Palette) continue
+    const block_states = { palette: s.Palette }
+    if (s.BlockStates) block_states.data = s.BlockStates
+    sections.push({ Y: s.Y, block_states })
+  }
+  const out = { DataVersion: nbt.DataVersion, xPos: lvl.xPos, zPos: lvl.zPos, sections }
+  if (lvl.TileEntities?.length) out.block_entities = lvl.TileEntities
+  if (lvl.Entities?.length) out.Entities = lvl.Entities
+  return out
+}
 
 function normChunk(nbt) {
   for (const s of nbt?.sections ?? []) {
@@ -291,8 +311,8 @@ async function readChunkFrom(bytes, index, only = CHUNK_KEEP, skip = CHUNK_SKIP)
   const len = dv.getUint32(off)
   const method = bytes[off + 4]
   const payload = bytes.subarray(off + 5, off + 4 + len)
-  if (method === 3) return normChunk(await readNBT(payload, { skip, only }))
-  if (method === 1 || method === 2) return normChunk(await readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip, only }))
+  if (method === 3) return normChunk(upgradeChunk(await readNBT(payload, { skip, only })))
+  if (method === 1 || method === 2) return normChunk(upgradeChunk(await readNBT(await inflate(payload, method === 1 ? "gzip" : "deflate"), { skip, only })))
   throw new Error(`unsupported chunk compression ${method}`)
 }
 
@@ -341,8 +361,8 @@ async function readChunk(world, chunk) {
 
 // only section palettes are needed, so the packed block data and the entity
 // region are never touched
-const EXTENT_ONLY = new Set(["sections"])
-const EXTENT_SKIP = new Set([...CHUNK_SKIP, "data"])
+const EXTENT_ONLY = new Set(["sections", "Level", "DataVersion"])
+const EXTENT_SKIP = new Set([...CHUNK_SKIP, "data", "BlockStates", "TileEntities", "Entities"])
 
 async function chunkYExtent(world, chunk) {
   const bytes = await regionData(world, "region", chunk.region)
@@ -357,8 +377,9 @@ async function chunkYExtent(world, chunk) {
   return top === -Infinity ? null : { top, bottom }
 }
 
-// indices are bit-packed low-to-high without spanning longs (1.16+); readNBT
-// hands the longs over as [lo, hi] uint32 pairs
+// indices are bit-packed low-to-high; before 20w17a (DataVersion 2527, the
+// game's BitStorageAlignFix) they span long boundaries, after they don't.
+// readNBT hands the longs over as [lo, hi] uint32 pairs
 export function chunkBlocks(nbt, { yMin = -Infinity, yMax = Infinity, includeAir = false } = {}) {
   const palette = [], palIdx = new Map()
   const stateFor = e => {
@@ -404,8 +425,20 @@ export function chunkBlocks(nbt, { yMin = -Infinity, yMax = Infinity, includeAir
     }
     const data = s.block_states.data ?? []
     const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
-    const vpl = Math.floor(64 / bits)
     const mask = (1 << bits) - 1
+    if (nbt.DataVersion < 2527) {
+      let w = 0, off = 0
+      for (let i = 0; i < 4096; i++) {
+        let v = data[w] >>> off
+        if (off + bits > 32) v |= data[w + 1] << (32 - off)
+        off += bits
+        if (off >= 32) { w += off >>> 5; off &= 31 }
+        const st = map[v & mask]
+        if (st !== -1 && st !== undefined) put(i, st)
+      }
+      continue
+    }
+    const vpl = Math.floor(64 / bits)
     const longs = data.length >> 1
     let i = 0
     for (let li = 0; li < longs && i < 4096; li++) {
@@ -445,7 +478,7 @@ function chunkIndexOf(world) {
   return ci.byKey
 }
 
-// ungenerated and pre-1.18 chunks are counted rather than thrown, so an empty
+// ungenerated and pre-1.13 chunks are counted rather than thrown, so an empty
 // result can say why it is empty
 async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1, includeAir = false } = {}, onProgress) {
   if (![x0, z0, x1, z1].every(Number.isFinite)) throw new Error("blocks needs a block box: x0, z0, x1, z1")

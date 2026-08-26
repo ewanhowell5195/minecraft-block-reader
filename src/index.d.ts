@@ -94,7 +94,7 @@ export interface ReadNBTOptions {
 export function readNBT(input: Uint8Array | ArrayBuffer, options?: ReadNBTOptions): Promise<Record<string, unknown>>
 
 export function parseState(str: string): BlockState
-export function normState(v: unknown): BlockState
+export function normState<T>(v: T): T | BlockState
 
 export const AIR: RegExp
 export const REAL_AIR: RegExp

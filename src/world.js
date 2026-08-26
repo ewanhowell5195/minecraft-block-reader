@@ -224,22 +224,24 @@ async function readDimension(files, prefix, onProgress) {
   const entityBufs = new Map()
   const chunks = []
   const total = regions.length
+  const headers = new Array(regions.length)
   let done = 0, next = 0
-  async function scanNext() {
+  async function fetchNext() {
     for (;;) {
       const i = next++
       if (i >= regions.length) return
-      const [m, entry] = regions[i]
-      const header = await entryPrefix(entry, 4096)
-      if (header.length >= 4096) {
-        const key = m[2] + "," + m[3]
-        regionBufs.set(key, entry)
-        scanRegion(header, Number(m[2]), Number(m[3]), key, chunks)
-      }
+      headers[i] = await entryPrefix(regions[i][1], 4096)
       onProgress?.(++done, total)
     }
   }
-  await Promise.all(Array.from({ length: Math.min(8, regions.length) }, scanNext))
+  await Promise.all(Array.from({ length: Math.min(8, regions.length) }, fetchNext))
+  for (let i = 0; i < regions.length; i++) {
+    if (headers[i].length < 4096) continue
+    const [m, entry] = regions[i]
+    const key = m[2] + "," + m[3]
+    regionBufs.set(key, entry)
+    scanRegion(headers[i], Number(m[2]), Number(m[3]), key, chunks)
+  }
   if (!chunks.length) throw new Error("the region files contain no chunks")
   for (const [m, entry] of eRegions) entityBufs.set(m[2] + "," + m[3], entry)
   return { regionBufs, entityBufs, chunks, regionCache: new Map() }

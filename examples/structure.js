@@ -1,5 +1,5 @@
 import fs from "node:fs"
-import { read, structureName } from "../src/index.js"
+import { read } from "../src/index.js"
 
 const file = process.argv[2]
 if (!file) {
@@ -7,9 +7,9 @@ if (!file) {
   process.exit(1)
 }
 
-const s = await read(fs.readFileSync(file), { name: file })
+const s = await read(fs.readFileSync(file))
 
-console.log(structureName(file.split(/[\\/]/).pop()))
+console.log(file.split(/[\\/]/).pop().replace(/\.(nbt|litematic|schem|mcstructure)$/i, ""))
 console.log("size:", s.size.join(" x "))
 console.log("blocks:", s.blocks.length, "| palette:", s.palette.length, "| entities:", s.entities.length)
 

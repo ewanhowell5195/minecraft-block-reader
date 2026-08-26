@@ -26,7 +26,7 @@ npm install minecraft-block-reader
 Or in the browser, import it straight from a [CDN](https://www.jsdelivr.com/package/npm/minecraft-block-reader):
 
 ```js
-import { read } from "https://cdn.jsdelivr.net/npm/minecraft-block-reader@0/+esm"
+import { read } from "https://cdn.jsdelivr.net/npm/minecraft-block-reader/+esm"
 ```
 
 ## Quick Start
@@ -88,23 +88,23 @@ The format is detected from the bytes: every format carries a signature nothing 
 
 ### Worlds
 
-Opening a world scans it without loading it; everything block-level happens on demand through the handle `read` returns:
+Opening a world scans it without loading it; everything block-level happens on demand through the handle `read` returns. Chunks from 1.18 on are readable; older ones are reported rather than read:
 
 | API | Description |
 |---|---|
 | `world.name` | The level name |
-| `world.blocks(box)` | The blocks in a block-coordinate box (`{ x0, y0, z0, x1, y1, z1, includeAir }`, inclusive on every side, y bounds optional): one shared palette, the box's entities, block entity nbt attached. Ungenerated and pre-1.18 chunks aren't errors; the result's `chunks: { read, missing, outdated }` says what the box covered, so an empty result can tell "air" from "unexplored" from "too old" |
+| `world.blocks(box, onProgress?)` | The blocks in a block-coordinate box (`{ x0, y0, z0, x1, y1, z1, includeAir }`, inclusive on every side, y bounds optional): one shared palette, the box's entities, block entity nbt attached. Ungenerated and pre-1.18 chunks aren't errors; the result's `chunks: { read, missing, outdated }` says what the box covered, so an empty result can tell "air" from "unexplored" from "too old" |
 | `world.chunks` | Every stored chunk, as `{ cx, cz, region, index }` |
 | `world.chunk(c)` | A chunk's NBT, with its entities folded in under `Entities` (the game stores them in separate region files) |
 | `world.chunkExtent(c)` | The chunk's occupied `{ top, bottom }`, from the palettes alone |
 | `world.dimension` | The current dimension id |
 | `world.dimensions` | The dimension ids, e.g. `["overworld", "the_nether"]` |
-| `world.setDimension(id)` | Switches the world to another of its dimensions |
+| `world.setDimension(id, onProgress?)` | Switches the world to another of its dimensions |
 | `world.structures` | The world's `generated/` structure files, as names |
 | `world.structure(rel)` | One of those, read as a structure |
 | `world.file(path)` | Any other file from the save (`level.dat`, map items, datapacks), as bytes |
 
-`chunkBlocks` is also exported for chunk-by-chunk work like streaming, where `world.blocks` would hold too much at once. It unpacks one chunk's NBT into palette + blocks + entities with world-space positions:
+`chunkBlocks` is also exported for chunk-by-chunk work like streaming, where `world.blocks` would hold too much at once. It unpacks one chunk's NBT into palette + blocks + entities with world-space positions, with `yMin`, `yMax`, and `includeAir` options:
 
 ```js
 import { chunkBlocks } from "minecraft-block-reader"
@@ -162,7 +162,7 @@ await readNBT(bytes, { skip: "Heightmaps" })
 
 That reach is the point for data buried in a structure you otherwise want, and the reason to be careful with a name the format reuses, `data` being the obvious one. The two combine, `only` choosing the branches and `skip` pruning within them, which is exactly how this library reads a chunk: `only` for the handful of root fields it needs, `skip` for the light arrays that live inside the sections.
 
-Reach for them when a file is large or there are thousands of it. On a 19KB world chunk, dropping the lighting, biome and heightmap data takes a parse from 0.22ms to 0.15ms, around a third; for a single small file it is not worth the thought. Passing a `Set` avoids rebuilding one per call, which only matters in that thousands case.
+Use them when a file is large or there are thousands of it. On a 19KB world chunk, dropping the lighting, biome and heightmap data takes a parse from 0.22ms to 0.15ms, around a third; for a single small file it is not worth the thought. Passing a `Set` avoids rebuilding one per call, which only matters in that thousands case.
 
 ### Block states
 
@@ -213,5 +213,3 @@ The first summarises any structure file: size, palette, a top-blocks tally, bloc
 ## License
 
 [MPL-2.0](LICENSE) © [Ewan Howell](https://ewanhowell.com/)
-
-Use it in anything, including closed source commercial projects: installing it as a dependency puts no obligations on your own code. Copying its source files into your project, or forking it, keeps those files under the MPL, so any changes to them have to stay open and credited.

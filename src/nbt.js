@@ -1,4 +1,5 @@
 import { normState } from "./state.js"
+import legacyStates from "./legacyStates.js"
 
 const TAG = {
   END: 0, BYTE: 1, SHORT: 2, INT: 3, LONG: 4, FLOAT: 5, DOUBLE: 6,
@@ -144,9 +145,44 @@ export async function readStructure(input) {
     pos: b.pos.map(Number),
     nbt: b.nbt
   }))
+  if (!palette.length && blocks.length) upgradeLegacyStates(palette, blocks)
   const entities = (root.entities ?? []).flatMap(e => e.nbt ? [{
     pos: (e.pos ?? e.blockPos ?? [0, 0, 0]).map(Number),
     nbt: e.nbt
   }] : [])
   return { size, palette, blocks, entities }
+}
+
+function upgradeLegacyStates(palette, blocks) {
+  const indices = new Map()
+  for (const b of blocks) {
+    const id = (b.state & 0xFFF) << 4 | b.state >> 12
+    const entry = legacyStates[id] ?? legacyStates[id & ~15]
+    let state, key = b.state
+    if (entry?.[0] === "%%FILTER_ME%%") {
+      state = skullState(entry[1], b.nbt)
+      key = b.state + "|" + state.id + "|" + (state.properties.rotation ?? "")
+    } else if (entry) {
+      state = entry[1] ? { id: entry[0], properties: { ...entry[1] } } : { id: entry[0] }
+    } else {
+      state = { id: "minecraft:air" }
+    }
+    let index = indices.get(key)
+    if (index === undefined) {
+      indices.set(key, index = palette.length)
+      palette.push(state)
+    }
+    b.state = index
+  }
+}
+
+const SKULL_TYPES = ["skeleton", "wither_skeleton", "zombie", "player", "creeper", "dragon"]
+
+function skullState(props, nbt) {
+  const mob = SKULL_TYPES[nbt?.SkullType ?? 0] ?? "skeleton"
+  const part = mob.includes("skeleton") ? "skull" : "head"
+  if (props?.facing === "up" || props?.facing === "down") {
+    return { id: `minecraft:${mob}_${part}`, properties: { rotation: String(nbt?.Rot ?? 0) } }
+  }
+  return { id: `minecraft:${mob}_wall_${part}`, properties: { facing: props?.facing ?? "north" } }
 }

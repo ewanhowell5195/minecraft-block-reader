@@ -86,6 +86,8 @@ The format is detected from the bytes: every format carries a signature nothing 
 
 `size` is the occupied bounds: litematic, schem, and mcstructure files are trimmed to the blocks they actually contain, while vanilla `.nbt` files keep their declared size.
 
+Vanilla `.nbt` files from any version read, including the palette-less 1.9-era format, whose packed numeric states come back as the block states the vanilla flattening maps them to.
+
 ### Worlds
 
 Opening a world scans it without loading it; everything block-level happens on demand through the handle `read` returns. Chunks from 1.13 on are readable, with pre-1.18 shapes folded to the current one; pre-1.13 chunks are reported rather than read:

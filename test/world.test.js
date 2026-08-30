@@ -382,3 +382,15 @@ test("readNBT: skip and only, in any key-set shape", async () => {
   assert.deepEqual(await readNBT(raw, { only: "deep", skip: "c" }), { deep: { a: 9 } })
   assert.deepEqual(await readNBT(raw, { only: "nothing_matches" }), {})
 })
+
+test("world.blocks carries the same blocks as a flat run", async () => {
+  const world = await read(buildRegion(new Map([[CHUNK_INDEX, chunkNbt()]])), { region: [0, -1] })
+  const r = await world.blocks({ x0: 0, z0: -32, x1: 63, z1: -1 })
+  assert.deepEqual(Object.keys(r), ["palette", "blocks", "entities", "chunks"])
+  assert.equal(JSON.parse(JSON.stringify(r)).raw, undefined)
+  assert.equal(r.raw.length, r.blocks.length * 4)
+  for (let i = 0, j = 0; i < r.raw.length; i += 4, j++) {
+    assert.equal(r.raw[i], r.blocks[j].state)
+    assert.deepEqual([r.raw[i + 1], r.raw[i + 2], r.raw[i + 3]], r.blocks[j].pos)
+  }
+})

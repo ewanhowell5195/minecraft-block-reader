@@ -5,6 +5,17 @@ import { writeNBT, packLitematic, gzip, B, Sh, I, D, Str, bytes, ints, longs, li
 
 const pos3 = (x, y, z) => list([I(x), I(y), I(z)])
 
+// the js reader is only reached when the wasm cannot load, so it is compared
+// against the wasm one here rather than waiting for a user to find the drift
+async function bothAgree(bytes, label) {
+  const { readStructureJs } = await import("../src/js-reader.js")
+  const js = await readStructureJs(bytes)
+  assert.notEqual(js, null, `${label}: the js reader did not recognise it`)
+  assert.deepEqual(js, await read(bytes), `${label}: the two readers disagree`)
+  assert.deepEqual(Array.from(js.raw), Array.from((await read(bytes)).raw), `${label}: raw differs`)
+}
+
+
 function vanillaStructure() {
   return writeNBT(comp({
     size: pos3(2, 1, 1),
@@ -35,6 +46,7 @@ test("vanilla structure, old state fields fold forward", async () => {
   assert.equal(s.entities.length, 1)
   assert.deepEqual(s.entities[0].pos, [0.5, 0, 0.5])
   assert.equal(s.entities[0].nbt.id, "minecraft:pig")
+  await bothAgree(vanillaStructure(), "vanilla")
 })
 
 test("vanilla structure accepts gzip and new state fields", async () => {
@@ -46,6 +58,7 @@ test("vanilla structure accepts gzip and new state fields", async () => {
   }))
   const s = await read(gzip(raw))
   assert.deepEqual(s.palette, [{ id: "minecraft:stone" }])
+  await bothAgree(raw, "vanilla gzip")
 })
 
 test("vanilla structure reads the plural palettes form", async () => {
@@ -57,6 +70,7 @@ test("vanilla structure reads the plural palettes form", async () => {
   }))
   const s = await read(raw)
   assert.deepEqual(s.palette, [{ id: "minecraft:dirt" }])
+  await bothAgree(raw, "vanilla palettes")
 })
 
 test("litematic: packed blocks, tile entities, entities", async () => {
@@ -93,6 +107,7 @@ test("litematic: packed blocks, tile entities, entities", async () => {
   assert.equal(chest.nbt.x, undefined)
   assert.equal(s.entities.length, 1)
   assert.deepEqual(s.entities[0].pos, [0.5, 0, 0.5])
+  await bothAgree(raw, "litematic")
 })
 
 test("litematic: negative region size still lands in bounds", async () => {
@@ -119,6 +134,7 @@ test("litematic: negative region size still lands in bounds", async () => {
   const chest = s.blocks.find(b => b.nbt)
   assert.deepEqual(chest.pos, [1, 0, 1])
   assert.deepEqual(s.entities[0].pos, [0.5, 0, 0.5])
+  await bothAgree(raw, "litematic negative size")
 })
 
 test("schem v2: varints, block entities, entities", async () => {
@@ -150,6 +166,7 @@ test("schem v2: varints, block entities, entities", async () => {
   assert.ok(chest.nbt.Items)
   assert.equal(s.entities.length, 1)
   assert.equal(s.entities[0].nbt.id, "minecraft:pig")
+  await bothAgree(raw, "schem v2")
 })
 
 test("schem v3: nested Blocks, Data payloads", async () => {
@@ -175,6 +192,7 @@ test("schem v3: nested Blocks, Data payloads", async () => {
   assert.ok(s.blocks[0].nbt.Items)
   assert.equal(s.entities[0].nbt.id, "minecraft:cow")
   assert.equal(s.entities[0].nbt.Health, 10)
+  await bothAgree(raw, "schem v3")
 })
 
 test("mcstructure: little-endian, waterlogging layer, block entities, entity origin", async () => {
@@ -214,6 +232,7 @@ test("mcstructure: little-endian, waterlogging layer, block entities, entity ori
   assert.equal(s.blocks[0].nbt.id, "Chest")
   assert.equal(s.entities.length, 1)
   assert.deepEqual(s.entities[0].pos, [1.5, 1, 0.5])
+  await bothAgree(raw, "mcstructure")
 })
 
 test("read rejects bytes it can't place", async () => {
@@ -228,3 +247,80 @@ test("parseState and normState", () => {
   const already = { id: "minecraft:stone", properties: { lit: "true" } }
   assert.equal(normState(already), already)
 })
+
+test("1.9 structures have no palette, so packed numeric states build one", async () => {
+  // the reader unpacks with ((state & 0xFFF) << 4 | state >> 12)
+  const packed = id => I(((id & 15) << 12) | (id >> 4))
+  const raw = writeNBT(comp({
+    size: pos3(4, 1, 1),
+    blocks: list([
+      comp({ state: packed(16), pos: pos3(0, 0, 0) }),
+      comp({ state: packed(16), pos: pos3(1, 0, 0) }),
+      comp({ state: packed(17), pos: pos3(2, 0, 0) }),
+      comp({ state: packed(800), pos: pos3(3, 0, 0) })
+    ])
+  }))
+  const s = await read(raw)
+  assert.deepEqual(s.palette, [
+    { id: "minecraft:stone" },
+    { id: "minecraft:granite" },
+    { id: "minecraft:air" }
+  ])
+  assert.deepEqual(s.blocks.map(b => b.state), [0, 0, 1, 2])
+})
+
+test("1.9 skulls take their block from SkullType and Rot, not the state", async () => {
+  const packed = id => I(((id & 15) << 12) | (id >> 4))
+  const skull = (id, nbt) => comp(nbt
+    ? { state: packed(id), pos: pos3(0, 0, 0), nbt: comp(nbt) }
+    : { state: packed(id), pos: pos3(0, 0, 0) })
+  const raw = writeNBT(comp({
+    size: pos3(1, 1, 1),
+    blocks: list([
+      skull(2305, { SkullType: I(1), Rot: I(7) }),
+      skull(2306, { SkullType: I(2) }),
+      skull(2305, null)
+    ])
+  }))
+  const s = await read(raw)
+  assert.deepEqual(s.palette, [
+    { id: "minecraft:wither_skeleton_skull", properties: { rotation: "7" } },
+    { id: "minecraft:zombie_wall_head", properties: { facing: "north" } },
+    { id: "minecraft:skeleton_skull", properties: { rotation: "0" } }
+  ])
+})
+
+test("raw is the same blocks as a flat run, and stays out of the enumerable shape", async () => {
+  const s = await read(vanillaStructure())
+  assert.deepEqual(Object.keys(s), ["size", "palette", "blocks", "entities"])
+  assert.equal(JSON.parse(JSON.stringify(s)).raw, undefined)
+  assert.equal(s.raw.length, s.blocks.length * 4)
+  for (let i = 0, j = 0; i < s.raw.length; i += 4, j++) {
+    assert.equal(s.raw[i], s.blocks[j].state)
+    assert.deepEqual([s.raw[i + 1], s.raw[i + 2], s.raw[i + 3]], s.blocks[j].pos)
+  }
+})
+
+test("the wasm reader is the one answering", async () => {
+  const { readStructureFast } = await import("../src/fast.js")
+  assert.notEqual(await readStructureFast(vanillaStructure()), null,
+    "the wasm module did not load, so every read silently fell back to js")
+})
+
+test("the built wasm is not older than the rust it came from", async t => {
+  const { statSync, readdirSync, existsSync } = await import("node:fs")
+  // rust/ is not published, so there is nothing to be out of step with
+  if (!existsSync(new URL("../rust/src", import.meta.url))) return t.skip("no rust sources")
+
+  const newest = dir => Math.max(...readdirSync(dir, { withFileTypes: true }).map(e => {
+    const p = dir + "/" + e.name
+    return e.isDirectory() ? newest(p) : statSync(p).mtimeMs
+  }))
+  const src = Math.max(
+    newest(new URL("../rust/src", import.meta.url).pathname.slice(1)),
+    statSync(new URL("../rust/Cargo.toml", import.meta.url).pathname.slice(1)).mtimeMs
+  )
+  const built = statSync(new URL("../wasm/minecraft_block_reader_bg.wasm", import.meta.url).pathname.slice(1)).mtimeMs
+  assert.ok(built >= src, "rust/ has changed since wasm/ was built, run npm run build:wasm")
+})
+

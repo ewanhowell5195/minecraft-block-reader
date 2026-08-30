@@ -57,6 +57,17 @@ And a world reads only what you ask for:
 const { palette, blocks, entities } = await world.blocks({ x0: -64, y0: 60, z0: -64, x1: 64, y1: 100, z1: 64 })
 ```
 
+### raw
+
+Every result also carries `raw`, the same blocks as one flat `Int32Array` of `[state, x, y, z, state, x, y, z, …]`, and `blocks` is built from it only if something reads it. For millions of blocks the objects cost far more than the parse does, so a consumer that can work in numbers should stay on `raw`:
+
+```js
+const { palette, raw } = await world.blocks(box)
+for (let i = 0; i < raw.length; i += 4) {
+  const state = palette[raw[i]], x = raw[i + 1], y = raw[i + 2], z = raw[i + 3]
+}
+```
+
 ## Documentation
 
 The full export list:
@@ -197,6 +208,30 @@ normState(42)                        // 42
 | `REAL_AIR` | `air`, `cave_air`, `void_air` |
 
 The difference is `structure_void`, which means "leave whatever is already here" and only exists in structure files. Use `AIR` when reading a structure, where it should be skipped like air, and `REAL_AIR` for world data, where a genuine block is never structure void.
+
+## Rust
+
+The parsing is a Rust crate, which the WebAssembly module is built from. It works on its own, without the JavaScript layer:
+
+```toml
+[dependencies]
+minecraft-block-reader = { git = "https://github.com/ewanhowell5195/minecraft-block-reader.git" }
+```
+
+```rust
+use minecraft_block_reader::{read_any, BoxQuery, Region};
+
+let structure = read_any(&bytes).unwrap();
+
+let region = Region::new(std::fs::read("r.4.-2.mca")?);
+let mut query = BoxQuery::new([2048.0, 60.0, -1024.0], [2300.0, 90.0, -800.0], false);
+query.add_chunk(&region, index, true);
+let blocks = query.finish();
+```
+
+`read_any` takes any structure format and gives back `Option<Structure>`. Worlds go through `Region`, one region file held so a browse never copies it per chunk, and `BoxQuery`, which walks many chunks into a single shared palette. `add_chunk` returns `Read`, `Missing` or `TooOld`, and `counts()` totals them, so an empty result can say why it is empty. `Region` also has `chunk` for the raw NBT, `chunk_blocks` for one chunk, and `chunk_extent` for the lowest and highest non-air y.
+
+Blocks come back as `flat`, a `Vec<i32>` of `[state, x, y, z, state, x, y, z, …]`, with `blocks()` for the object form. Finding the region files is left to the caller, so the crate reads no zips. The `wasm` feature is off by default and only adds the JavaScript bindings.
 
 ## Examples
 

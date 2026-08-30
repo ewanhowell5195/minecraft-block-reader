@@ -29,6 +29,19 @@ Or in the browser, import it straight from a [CDN](https://www.jsdelivr.com/pack
 import { read } from "https://cdn.jsdelivr.net/npm/minecraft-block-reader/+esm"
 ```
 
+With Vite's dev server, for example, the dependency pre-bundler moves the module URL without copying the WebAssembly module alongside it, so it quietly fails to load and the reader falls back to its slower JavaScript path. Exclude the library from pre-bundling:
+
+```js
+// vite.config.js
+export default defineConfig({
+  optimizeDeps: {
+    exclude: ["minecraft-block-reader"]
+  }
+})
+```
+
+Vite builds are unaffected, since Rollup resolves the URL itself and emits the module as an asset. Reading inside a web worker also wants `worker: { format: "es" }`, since the JavaScript fallback is pulled in with a dynamic import and Vite's default `iife` worker format cannot code-split. Other bundlers may need their own equivalent.
+
 ## Quick Start
 
 `read` takes any supported file and works out what it is. Structure files come back as structures, saves as worlds:
@@ -67,6 +80,8 @@ for (let i = 0; i < raw.length; i += 4) {
   const state = palette[raw[i]], x = raw[i + 1], y = raw[i + 2], z = raw[i + 3]
 }
 ```
+
+Block entities come with `blockNbt`, a `Map` from a block's index in `raw` to its nbt, so `raw` never has to fall back to the objects to reach them.
 
 ## Documentation
 
@@ -110,6 +125,7 @@ Opening a world scans it without loading it; everything block-level happens on d
 | `world.chunks` | Every stored chunk, as `{ cx, cz, region, index }` |
 | `world.chunk(c)` | A chunk's NBT, with its entities folded in under `Entities` (the game stores them in separate region files) |
 | `world.chunkExtent(c)` | The chunk's occupied `{ top, bottom }`, from the palettes alone |
+| `world.chunkGrid(c, { yMin, yMax })` | The chunk as a dense voxel grid, for renderers that want O(1) neighbour lookups: `grid` is a `Uint16Array` of `256 * height` cells indexed `(y - yMin) * 256 + z * 16 + x`, holding 0 for air or a one-based index into `palette`, plus `beList` and an `empty` flag |
 | `world.dimension` | The current dimension id |
 | `world.dimensions` | The dimension ids, e.g. `["overworld", "the_nether"]` |
 | `world.setDimension(id, onProgress?)` | Switches the world to another of its dimensions |

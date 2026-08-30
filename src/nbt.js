@@ -1,4 +1,5 @@
 import { normState } from "./state.js"
+import { withRaw } from "./blocks.js"
 import legacyStates from "./legacyStates.js"
 
 const TAG = {
@@ -140,17 +141,17 @@ export async function readStructure(input) {
   const root = await rootOf(input)
   const size = (root.size ?? [0, 0, 0]).map(Number)
   const palette = (root.palette ?? root.palettes?.[0] ?? []).map(normState)
-  const blocks = (root.blocks ?? []).map(b => ({
-    state: Number(b.state),
-    pos: b.pos.map(Number),
-    nbt: b.nbt
-  }))
+  const blocks = (root.blocks ?? []).map(b => {
+    const out = { state: Number(b.state), pos: b.pos.map(Number) }
+    if (b.nbt) out.nbt = b.nbt
+    return out
+  })
   if (!palette.length && blocks.length) upgradeLegacyStates(palette, blocks)
   const entities = (root.entities ?? []).flatMap(e => e.nbt ? [{
     pos: (e.pos ?? e.blockPos ?? [0, 0, 0]).map(Number),
     nbt: e.nbt
   }] : [])
-  return { size, palette, blocks, entities }
+  return withRaw({ size, palette, blocks, entities })
 }
 
 function upgradeLegacyStates(palette, blocks) {

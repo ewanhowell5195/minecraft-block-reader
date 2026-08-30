@@ -1,5 +1,7 @@
 import { readNBT, readStructure } from "./nbt.js"
+import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast } from "./fast.js"
 import { normState, REAL_AIR } from "./state.js"
+import { withBlocks, withRaw } from "./blocks.js"
 
 async function inflate(data, format) {
   const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream(format))
@@ -156,7 +158,8 @@ function makeWorld(world) {
   world.structure = async rel => {
     const entry = world.structureEntries.get(rel)
     if (!entry) throw new Error("no generated structure " + rel)
-    return readStructure(await unzipEntry(entry))
+    const bytes = await unzipEntry(entry)
+    return await readStructureFast(bytes) ?? readStructure(bytes)
   }
   return world
 }
@@ -366,6 +369,8 @@ const EXTENT_SKIP = new Set([...CHUNK_SKIP, "data", "BlockStates", "TileEntities
 
 async function chunkYExtent(world, chunk) {
   const bytes = await regionData(world, "region", chunk.region)
+  const handle = bytes ? await regionHandle(bytes) : null
+  if (handle) return chunkExtentFast(handle, chunk.index)
   const nbt = bytes ? await readChunkFrom(bytes, chunk.index, EXTENT_ONLY, EXTENT_SKIP) : null
   let top = -Infinity, bottom = Infinity
   for (const s of nbt?.sections ?? []) {
@@ -462,7 +467,7 @@ export function chunkBlocks(nbt, { yMin = -Infinity, yMax = Infinity, includeAir
     if (pos[1] < yMin || pos[1] > yMax + 1) continue
     entities.push({ pos, nbt: e })
   }
-  return { palette, blocks, entities }
+  return withRaw({ palette, blocks, entities })
 }
 
 // keyed on the chunks array itself, so setDimension replacing it invalidates
@@ -486,6 +491,39 @@ async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1
   if (y1 < y0) [y0, y1] = [y1, y0]
   if (z1 < z0) [z0, z1] = [z1, z0]
   const byKey = chunkIndexOf(world)
+  const counts = { read: 0, missing: 0, outdated: 0 }
+  const cx0 = Math.floor(x0 / 16), cx1 = Math.floor(x1 / 16)
+  const cz0 = Math.floor(z0 / 16), cz1 = Math.floor(z1 / 16)
+  const total = (cx1 - cx0 + 1) * (cz1 - cz0 + 1)
+  let done = 0
+
+  const query = await boxQuery({ x0, y0, z0, x1, y1, z1, includeAir })
+  if (query) {
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cz = cz0; cz <= cz1; cz++) {
+        const chunk = byKey.get(cx + "," + cz)
+        const handle = chunk ? await regionHandle(await regionData(world, "region", chunk.region)) : null
+        if (!handle) {
+          counts.missing++
+          onProgress?.(++done, total)
+          continue
+        }
+        // 1.17 moved entities into their own region files
+        const ebytes = await regionData(world, "entity", chunk.region)
+        const eh = ebytes && ebytes.length >= 8192 ? await regionHandle(ebytes) : null
+        const status = query.addChunk(handle, chunk.index, !eh)
+        if (status === 1) counts.missing++
+        else if (status === 2) counts.outdated++
+        else {
+          counts.read++
+          if (eh) query.addEntities(eh, chunk.index)
+        }
+        onProgress?.(++done, total)
+      }
+    }
+    return finish(await finishQuery(query), counts)
+  }
+
   const palette = [], palIdx = new Map()
   const stateFor = e => {
     const key = e.id + "|" + JSON.stringify(e.properties ?? null)
@@ -497,12 +535,18 @@ async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1
     }
     return i
   }
-  const blocks = [], entities = []
-  const counts = { read: 0, missing: 0, outdated: 0 }
-  const cx0 = Math.floor(x0 / 16), cx1 = Math.floor(x1 / 16)
-  const cz0 = Math.floor(z0 / 16), cz1 = Math.floor(z1 / 16)
-  const total = (cx1 - cx0 + 1) * (cz1 - cz0 + 1)
-  let done = 0
+  const entities = []
+  let flat = new Int32Array(1 << 16)
+  let flatLen = 0
+  const pushFlat = (state, x, y, z) => {
+    if (flatLen + 4 > flat.length) {
+      const bigger = new Int32Array(Math.max(flat.length * 2, flatLen + 4))
+      bigger.set(flat.subarray(0, flatLen))
+      flat = bigger
+    }
+    flat[flatLen++] = state; flat[flatLen++] = x; flat[flatLen++] = y; flat[flatLen++] = z
+  }
+  const nbtIdx = [], nbtVal = []
   for (let cx = cx0; cx <= cx1; cx++) {
     for (let cz = cz0; cz <= cz1; cz++) {
       const chunk = byKey.get(cx + "," + cz)
@@ -523,8 +567,8 @@ async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1
       for (const b of part.blocks) {
         const [x, , z] = b.pos
         if (x < x0 || x > x1 || z < z0 || z > z1) continue
-        b.state = map[b.state]
-        blocks.push(b)
+        if (b.nbt) { nbtIdx.push(flatLen / 4); nbtVal.push(b.nbt) }
+        pushFlat(map[b.state], x, b.pos[1], z)
       }
       for (const e of part.entities) {
         const [x, , z] = e.pos
@@ -534,5 +578,9 @@ async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1
       onProgress?.(++done, total)
     }
   }
-  return { palette, blocks, entities, chunks: counts }
+  return finish({ palette, raw: flat.subarray(0, flatLen), blockNbt: { bi: nbtIdx, bn: nbtVal }, entities }, counts)
+}
+
+function finish({ palette, raw, blockNbt, entities }, counts) {
+  return withBlocks({ palette, blocks: null, entities, chunks: counts }, raw, blockNbt.bi, blockNbt.bn)
 }

@@ -1,4 +1,5 @@
 import { rootOf } from "./nbt.js"
+import { withRaw } from "./blocks.js"
 import { AIR, parseState, normState } from "./state.js"
 
 function collector() {
@@ -18,19 +19,19 @@ function collector() {
   const entity = (pos, nbt) => ents.push({ pos, nbt })
   function finish() {
     if (!cells.length) {
-      return {
+      return withRaw({
         size: [1, 1, 1],
         palette: [{ id: "minecraft:air" }],
         blocks: [{ state: 0, pos: [0, 0, 0] }],
         entities: ents.map(e => ({ pos: e.pos.slice(), nbt: e.nbt }))
-      }
+      })
     }
     const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity]
     for (const c of cells) for (let i = 0; i < 3; i++) {
       lo[i] = Math.min(lo[i], c[i])
       hi[i] = Math.max(hi[i], c[i])
     }
-    return {
+    return withRaw({
       size: [hi[0] - lo[0] + 1, hi[1] - lo[1] + 1, hi[2] - lo[2] + 1],
       palette,
       blocks: cells.map(c => {
@@ -40,7 +41,7 @@ function collector() {
         return b
       }),
       entities: ents.map(e => ({ pos: [e.pos[0] - lo[0], e.pos[1] - lo[1], e.pos[2] - lo[2]], nbt: e.nbt }))
-    }
+    })
   }
   return { stateFor, push, blockNbt, entity, finish }
 }

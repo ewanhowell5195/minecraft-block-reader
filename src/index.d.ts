@@ -19,6 +19,8 @@ export interface Structure {
   palette: BlockState[]
   blocks: Block[]
   entities: Entity[]
+  /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
+  readonly raw: Int32Array
 }
 
 export interface ChunkRef {
@@ -43,6 +45,8 @@ export interface BlockResult {
   blocks: Block[]
   entities: Entity[]
   chunks: { read: number, missing: number, outdated: number }
+  /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
+  readonly raw: Int32Array
 }
 
 export type Progress = (done: number, total: number) => void
@@ -81,6 +85,8 @@ export function chunkBlocks(nbt: Record<string, unknown> | null | undefined, opt
   palette: BlockState[]
   blocks: Block[]
   entities: Entity[]
+  /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
+  readonly raw: Int32Array
 }
 
 export type Keys = string | Iterable<string>

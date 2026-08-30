@@ -1,6 +1,7 @@
 import { readNBT, readStructure } from "./nbt.js"
 import { readLitematic, readSchem, readMcstructure } from "./formats.js"
 import { readWorld } from "./world.js"
+import { readStructureFast } from "./fast.js"
 
 const headBytes = async (src, n) =>
   src instanceof Uint8Array ? src.subarray(0, n) : new Uint8Array(await src.slice(0, n).arrayBuffer())
@@ -16,6 +17,8 @@ export async function read(src, { region, dimension, onProgress } = {}) {
   const head = await headBytes(src, 2)
   if (head[0] === 0x50 && head[1] === 0x4b) return readWorld(src, { region, dimension, onProgress })
   const bytes = await bytesOf(src)
+  const fast = await readStructureFast(bytes)
+  if (fast) return fast
   try {
     const root = await readNBT(bytes)
     if (root.Regions) return readLitematic(root)

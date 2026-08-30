@@ -1,0 +1,26 @@
+[package]
+name = "minecraft-block-reader"
+version = "1.1.0"
+edition = "2021"
+description = "Read blocks, block states, and entities from Minecraft structure files and world saves"
+license = "MPL-2.0"
+repository = "https://github.com/ewanhowell5195/minecraft-block-reader"
+readme = "../README.md"
+keywords = ["minecraft", "nbt", "structure", "anvil", "schematic"]
+categories = ["parser-implementations", "game-development"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zune-inflate = { version = "0.2", default-features = false, features = ["gzip", "zlib"] }
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

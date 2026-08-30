@@ -73,6 +73,25 @@ export async function regionHandle(bytes) {
   return handle
 }
 
+export async function chunkGridFast(handle, index, yMin, yMax) {
+  const packed = handle.chunkGrid(index, yMin, yMax)
+  if (!packed) return null
+  let palette, grid, extrasBytes, empty
+  try {
+    palette = JSON.parse(packed.palette)
+    grid = packed.grid
+    extrasBytes = packed.extras
+    empty = packed.empty
+  } finally {
+    packed.free()
+  }
+  const extras = await readNBT(extrasBytes, { littleEndian: false })
+  const beList = extras.bn.map((nbt, i) => ({
+    x: extras.bp[i * 3], y: extras.bp[i * 3 + 1], z: extras.bp[i * 3 + 2], nbt
+  }))
+  return { palette, grid, beList, empty }
+}
+
 export function chunkExtentFast(handle, index) {
   const e = handle.chunkExtent(index)
   return e ? { top: e[1], bottom: e[0] } : null

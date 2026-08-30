@@ -14,7 +14,7 @@ pub use nbt::{read_nbt, Compound, Value};
 pub use state::{is_air, is_real_air, norm_state, parse_state, State};
 pub use chunk::{chunk_blocks, ChunkBlocks, ChunkOptions};
 pub use structure::{Block, Entity, Structure};
-pub use world::{BoxQuery, ChunkStatus, Counts, Region};
+pub use world::{BoxQuery, ChunkGrid, ChunkStatus, Counts, Region};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -134,10 +134,62 @@ mod bindings {
             RegionJs { inner: Region::new(bytes) }
         }
 
+        #[wasm_bindgen(js_name = chunkGrid)]
+        pub fn chunk_grid(&self, index: usize, y_min: i32, y_max: i32) -> Option<PackedGridJs> {
+            let g = self.inner.chunk_grid(index, y_min, y_max)?;
+            let mut pos = Vec::with_capacity(g.block_entities.len() * 3);
+            let mut nbt = Vec::with_capacity(g.block_entities.len());
+            for (p, c) in &g.block_entities {
+                pos.extend_from_slice(p);
+                nbt.push(Value::Compound(c.clone()));
+            }
+            let mut extras = Compound::default();
+            extras.insert("bp", Value::IntArray(pos));
+            extras.insert("bn", Value::List(nbt::COMPOUND, nbt));
+            let s = Structure { size: [0, 0, 0], palette: g.palette, blocks: Vec::new(), entities: Vec::new() };
+            Some(PackedGridJs {
+                palette: out::palette_json(&s),
+                grid: g.grid,
+                extras: nbt::Writer::new().root(&extras),
+                empty: g.empty,
+            })
+        }
+
         /// `[bottom, top]` of the non air blocks, or nothing when the chunk is empty.
         #[wasm_bindgen(js_name = chunkExtent)]
         pub fn chunk_extent(&self, index: usize) -> Option<Vec<i32>> {
             self.inner.chunk_extent(index).map(|(bottom, top)| vec![bottom, top])
+        }
+    }
+
+    /// A chunk as a dense voxel grid: `grid` is `256 * height` cells of
+    /// `(y - yMin) * 256 + z * 16 + x`, 0 for air or a one based palette index.
+    #[wasm_bindgen(js_name = PackedGrid)]
+    pub struct PackedGridJs {
+        palette: String,
+        grid: Vec<u16>,
+        extras: Vec<u8>,
+        empty: bool,
+    }
+
+    #[wasm_bindgen(js_class = PackedGrid)]
+    impl PackedGridJs {
+        #[wasm_bindgen(getter)]
+        pub fn palette(&self) -> String {
+            self.palette.clone()
+        }
+        #[wasm_bindgen(getter)]
+        pub fn grid(&self) -> Vec<u16> {
+            self.grid.clone()
+        }
+        /// nbt bytes: `bp` block entity positions, `bn` their nbt
+        #[wasm_bindgen(getter)]
+        pub fn extras(&self) -> Vec<u8> {
+            self.extras.clone()
+        }
+        #[wasm_bindgen(getter)]
+        pub fn empty(&self) -> bool {
+            self.empty
         }
     }
 

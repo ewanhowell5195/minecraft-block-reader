@@ -1,5 +1,5 @@
 import { readNBT } from "./nbt.js"
-import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast } from "./fast.js"
+import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast, chunkGridFast } from "./fast.js"
 import { normState, REAL_AIR } from "./state.js"
 import { withBlocks, withRaw } from "./blocks.js"
 
@@ -144,6 +144,7 @@ function makeWorld(world) {
   world.blocks = (box, onProgress) => readBlocks(world, box, onProgress)
   world.chunk = chunk => readChunk(world, chunk)
   world.chunkExtent = chunk => chunkYExtent(world, chunk)
+  world.chunkGrid = (chunk, opts) => readChunkGrid(world, chunk, opts)
   world.setDimension = async (id, onProgress) => {
     const d = world.dims?.find(d => d.id === id)
     if (!d) throw new Error("unknown dimension " + id)
@@ -586,4 +587,96 @@ async function readBlocks(world, { x0, y0 = -Infinity, z0, x1, y1 = Infinity, z1
 
 function finish({ palette, raw, blockNbt, entities }, counts) {
   return withBlocks({ palette, blocks: null, entities, chunks: counts }, raw, blockNbt.bi, blockNbt.bn)
+}
+
+// A chunk as a dense voxel grid, for renderers that need O(1) neighbour lookups.
+// `grid` is 256 * height cells of (y - yMin) * 256 + z * 16 + x, holding 0 for
+// air or a one-based index into `palette`.
+async function readChunkGrid(world, chunk, { yMin = -Infinity, yMax = Infinity } = {}) {
+  const bytes = await regionData(world, "region", chunk.region)
+  const handle = bytes ? await regionHandle(bytes) : null
+  if (handle) {
+    const out = await chunkGridFast(handle, chunk.index, yMin, yMax)
+    if (out) return out
+  }
+  return chunkGridJs(await readChunk(world, chunk), yMin, yMax)
+}
+
+function chunkGridJs(nbt, yMin, yMax) {
+  const height = Math.max(0, yMax - yMin + 1)
+  const grid = new Uint16Array(256 * height)
+  const palette = []
+  const palIdx = new Map()
+  const beList = []
+  let empty = true
+  if (!nbt?.sections) return { palette, grid, beList, empty }
+
+  for (const be of nbt.block_entities ?? []) {
+    if (typeof be?.x !== "number" || be.y < yMin || be.y > yMax) continue
+    const { x, y, z, keepPacked, ...rest } = be
+    beList.push({ x, y, z, nbt: rest })
+  }
+
+  for (const s of nbt.sections) {
+    const pal = s.block_states?.palette
+    if (!pal) continue
+    const sy = s.Y * 16
+    if (sy + 15 < yMin || sy > yMax) continue
+    const map = pal.map(e => {
+      if (REAL_AIR.test(e?.id ?? "")) return 0
+      const key = e.id + "|" + JSON.stringify(e.properties ?? null)
+      let i = palIdx.get(key)
+      if (i === undefined) {
+        i = palette.length + 1
+        palette.push(e.properties ? { id: e.id, properties: e.properties } : { id: e.id })
+        palIdx.set(key, i)
+      }
+      return i
+    })
+    const yLo = Math.max(0, yMin - sy), yHi = Math.min(15, yMax - sy)
+    const put = (i, gi) => {
+      if (!gi) return
+      const y = i >> 8
+      if (y < yLo || y > yHi) return
+      grid[(sy + y - yMin) * 256 + (i & 255)] = gi
+      empty = false
+    }
+
+    if (pal.length === 1) {
+      if (!map[0]) continue
+      for (let y = yLo; y <= yHi; y++) grid.fill(map[0], (sy + y - yMin) * 256, (sy + y - yMin) * 256 + 256)
+      empty = false
+      continue
+    }
+
+    const data = s.block_states.data ?? []
+    const bits = Math.max(4, 32 - Math.clz32(pal.length - 1))
+    const mask = (1 << bits) - 1
+    if (nbt.DataVersion < 2527) {
+      let w = 0, off = 0
+      for (let i = 0; i < 4096; i++) {
+        let v = data[w] >>> off
+        if (off + bits > 32) v |= data[w + 1] << (32 - off)
+        off += bits
+        if (off >= 32) { w += off >>> 5; off &= 31 }
+        put(i, map[v & mask])
+      }
+      continue
+    }
+    const vpl = Math.floor(64 / bits)
+    const longs = data.length >> 1
+    let i = 0
+    for (let li = 0; li < longs && i < 4096; li++) {
+      const lo = data[li * 2], hi = data[li * 2 + 1]
+      for (let j = 0; j < vpl && i < 4096; j++, i++) {
+        const off = j * bits
+        let v
+        if (off + bits <= 32) v = (lo >>> off) & mask
+        else if (off >= 32) v = (hi >>> (off - 32)) & mask
+        else v = ((lo >>> off) | (hi << (32 - off))) & mask
+        put(i, map[v])
+      }
+    }
+  }
+  return { palette, grid, beList, empty }
 }

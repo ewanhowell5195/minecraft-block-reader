@@ -137,6 +137,71 @@ export class Packed {
 }
 if (Symbol.dispose) Packed.prototype[Symbol.dispose] = Packed.prototype.free;
 
+/**
+ * A chunk as a dense voxel grid: `grid` is `256 * height` cells of
+ * `(y - yMin) * 256 + z * 16 + x`, 0 for air or a one based palette index.
+ */
+export class PackedGrid {
+    static __wrap(ptr) {
+        const obj = Object.create(PackedGrid.prototype);
+        obj.__wbg_ptr = ptr;
+        PackedGridFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PackedGridFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_packedgrid_free(ptr, 0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    get empty() {
+        const ret = wasm.packedgrid_empty(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * nbt bytes: `bp` block entity positions, `bn` their nbt
+     * @returns {Uint8Array}
+     */
+    get extras() {
+        const ret = wasm.packedgrid_extras(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    get grid() {
+        const ret = wasm.packedgrid_grid(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {string}
+     */
+    get palette() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.packedgrid_palette(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+}
+if (Symbol.dispose) PackedGrid.prototype[Symbol.dispose] = PackedGrid.prototype.free;
+
 export class Region {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -161,6 +226,16 @@ export class Region {
             wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         }
         return v1;
+    }
+    /**
+     * @param {number} index
+     * @param {number} y_min
+     * @param {number} y_max
+     * @returns {PackedGrid | undefined}
+     */
+    chunkGrid(index, y_min, y_max) {
+        const ret = wasm.region_chunkGrid(this.__wbg_ptr, index, y_min, y_max);
+        return ret === 0 ? undefined : PackedGrid.__wrap(ret);
     }
     /**
      * @param {Uint8Array} bytes
@@ -214,6 +289,9 @@ const BoxQueryFinalization = (typeof FinalizationRegistry === 'undefined')
 const PackedFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_packed_free(ptr, 1));
+const PackedGridFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_packedgrid_free(ptr, 1));
 const RegionFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_region_free(ptr, 1));
@@ -227,6 +305,11 @@ function _assertClass(instance, klass) {
 function getArrayI32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getInt32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
+function getArrayU16FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
 }
 
 function getArrayU32FromWasm0(ptr, len) {
@@ -249,6 +332,14 @@ function getInt32ArrayMemory0() {
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint16ArrayMemory0 = null;
+function getUint16ArrayMemory0() {
+    if (cachedUint16ArrayMemory0 === null || cachedUint16ArrayMemory0.byteLength === 0) {
+        cachedUint16ArrayMemory0 = new Uint16Array(wasm.memory.buffer);
+    }
+    return cachedUint16ArrayMemory0;
 }
 
 let cachedUint32ArrayMemory0 = null;
@@ -296,6 +387,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedInt32ArrayMemory0 = null;
+    cachedUint16ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

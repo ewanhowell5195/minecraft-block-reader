@@ -353,3 +353,33 @@ fn a_pre_palette_chunk_is_reported_rather_than_read() {
     assert_eq!(q.counts().outdated, 1);
     assert!(region.chunk_blocks(0, &ChunkOptions::default()).is_none());
 }
+
+#[test]
+fn a_chunk_reads_as_a_dense_grid() {
+    // two entries means a 4 bit field, so every nibble set to 1 is all stone
+    let nbt = one_section_chunk(vec![state("minecraft:air"), state("minecraft:stone")], Some(vec![0x1111_1111_1111_1111; 256]), 0);
+    let region = Region::new(region_bytes(3, &nbt));
+    let g = region.chunk_grid(3, 0, 15).unwrap();
+
+    assert_eq!(g.grid.len(), 256 * 16);
+    assert_eq!(g.palette.len(), 1);
+    assert_eq!(g.palette[0].id, "minecraft:stone");
+    // every index is 1, so every cell is the one-based stone entry
+    assert!(g.grid.iter().all(|&c| c == 1));
+    assert!(!g.empty);
+
+    // a y range narrower than the section only fills its own rows
+    let part = region.chunk_grid(3, 4, 6).unwrap();
+    assert_eq!(part.grid.len(), 256 * 3);
+    assert!(part.grid.iter().all(|&c| c == 1));
+}
+
+#[test]
+fn an_air_only_chunk_grid_is_empty() {
+    let nbt = one_section_chunk(vec![state("minecraft:air")], None, 0);
+    let region = Region::new(region_bytes(3, &nbt));
+    let g = region.chunk_grid(3, 0, 15).unwrap();
+    assert!(g.empty);
+    assert!(g.palette.is_empty());
+    assert!(g.grid.iter().all(|&c| c == 0));
+}

@@ -32,6 +32,23 @@ export class Packed {
     readonly status: number;
 }
 
+/**
+ * A chunk as a dense voxel grid: `grid` is `256 * height` cells of
+ * `(y - yMin) * 256 + z * 16 + x`, 0 for air or a one based palette index.
+ */
+export class PackedGrid {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    readonly empty: boolean;
+    /**
+     * nbt bytes: `bp` block entity positions, `bn` their nbt
+     */
+    readonly extras: Uint8Array;
+    readonly grid: Uint16Array;
+    readonly palette: string;
+}
+
 export class Region {
     free(): void;
     [Symbol.dispose](): void;
@@ -39,6 +56,7 @@ export class Region {
      * `[bottom, top]` of the non air blocks, or nothing when the chunk is empty.
      */
     chunkExtent(index: number): Int32Array | undefined;
+    chunkGrid(index: number, y_min: number, y_max: number): PackedGrid | undefined;
     constructor(bytes: Uint8Array);
 }
 
@@ -50,6 +68,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_boxquery_free: (a: number, b: number) => void;
     readonly __wbg_packed_free: (a: number, b: number) => void;
+    readonly __wbg_packedgrid_free: (a: number, b: number) => void;
     readonly __wbg_region_free: (a: number, b: number) => void;
     readonly boxquery_addChunk: (a: number, b: number, c: number, d: number) => number;
     readonly boxquery_addEntities: (a: number, b: number, c: number) => void;
@@ -61,8 +80,13 @@ export interface InitOutput {
     readonly packed_palette: (a: number) => [number, number];
     readonly packed_size: (a: number) => [number, number];
     readonly packed_status: (a: number) => number;
+    readonly packedgrid_empty: (a: number) => number;
+    readonly packedgrid_extras: (a: number) => [number, number];
+    readonly packedgrid_grid: (a: number) => [number, number];
+    readonly packedgrid_palette: (a: number) => [number, number];
     readonly readStructure: (a: number, b: number) => number;
     readonly region_chunkExtent: (a: number, b: number) => [number, number];
+    readonly region_chunkGrid: (a: number, b: number, c: number, d: number) => number;
     readonly region_new: (a: number, b: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;

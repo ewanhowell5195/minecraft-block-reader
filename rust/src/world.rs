@@ -1,7 +1,7 @@
 use crate::chunk::{chunk_into, Acc, ChunkBlocks, ChunkOptions};
 use crate::nbt::{Compound, Value};
 use crate::region::{read_chunk, read_chunk_extent};
-use crate::state::{is_real_air, norm_state};
+use crate::state::{is_real_air, norm_state, State};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChunkStatus {
@@ -131,5 +131,167 @@ impl BoxQuery {
             block_nbt: std::mem::take(&mut self.acc.block_nbt),
             entities: std::mem::take(&mut self.acc.entities),
         }
+    }
+}
+
+/// A chunk as a dense voxel grid, for renderers that need O(1) neighbour
+/// lookups. `grid` is `256 * height` cells indexed `(y - y_min) * 256 + z * 16 + x`,
+/// holding 0 for air or a one based index into `palette`.
+pub struct ChunkGrid {
+    pub palette: Vec<State>,
+    pub grid: Vec<u16>,
+    /// Absolute position and nbt, for the block entities inside the y range.
+    pub block_entities: Vec<([i32; 3], Compound)>,
+    pub empty: bool,
+}
+
+impl Region {
+    pub fn chunk_grid(&self, index: usize, y_min: i32, y_max: i32) -> Option<ChunkGrid> {
+        let nbt = self.chunk(index)?;
+        let height = (y_max - y_min + 1).max(0) as usize;
+        let mut out = ChunkGrid {
+            palette: Vec::new(),
+            grid: vec![0u16; 256 * height],
+            block_entities: Vec::new(),
+            empty: true,
+        };
+        let Some(Value::List(_, sections)) = nbt.get("sections") else { return Some(out) };
+
+        if let Some(Value::List(_, items)) = nbt.get("block_entities") {
+            for it in items {
+                let Some(c) = it.as_compound() else { continue };
+                let (Some(x), Some(y), Some(z)) = (
+                    c.get("x").and_then(|v| v.as_i64()),
+                    c.get("y").and_then(|v| v.as_i64()),
+                    c.get("z").and_then(|v| v.as_i64()),
+                ) else {
+                    continue;
+                };
+                if (y as i32) < y_min || (y as i32) > y_max {
+                    continue;
+                }
+                let mut rest = Compound::default();
+                for (k, v) in &c.entries {
+                    if k != "x" && k != "y" && k != "z" && k != "keepPacked" {
+                        rest.entries.push((k.clone(), v.clone()));
+                    }
+                }
+                out.block_entities.push(([x as i32, y as i32, z as i32], rest));
+            }
+        }
+
+        let data_version = nbt.get("DataVersion").and_then(|v| v.as_i64()).unwrap_or(0);
+        let mut index_of: std::collections::HashMap<String, u16> = std::collections::HashMap::new();
+
+        for s in sections {
+            let Some(sc) = s.as_compound() else { continue };
+            let Some(bs) = sc.get("block_states").and_then(|v| v.as_compound()) else { continue };
+            let Some(Value::List(_, pal)) = bs.get("palette") else { continue };
+            let sy = sc.get("Y").and_then(|v| v.as_i64()).unwrap_or(0) as i32 * 16;
+            if sy + 15 < y_min || sy > y_max {
+                continue;
+            }
+
+            let map: Vec<u16> = pal
+                .iter()
+                .map(|e| {
+                    let st = norm_state(e).unwrap_or_default();
+                    if is_real_air(&st.id) {
+                        return 0;
+                    }
+                    let key = st.key();
+                    if let Some(i) = index_of.get(&key) {
+                        return *i;
+                    }
+                    let i = out.palette.len() as u16 + 1;
+                    out.palette.push(st);
+                    index_of.insert(key, i);
+                    i
+                })
+                .collect();
+
+            let y_lo = (y_min - sy).max(0);
+            let y_hi = (y_max - sy).min(15);
+
+            if pal.len() == 1 {
+                if map[0] == 0 {
+                    continue;
+                }
+                for y in y_lo..=y_hi {
+                    let row = (sy + y - y_min) as usize * 256;
+                    out.grid[row..row + 256].fill(map[0]);
+                }
+                out.empty = false;
+                continue;
+            }
+
+            let data: Vec<u32> = match bs.get("data") {
+                Some(Value::LongArray(a)) => crate::collector::words(a),
+                _ => Vec::new(),
+            };
+            let bits = (32 - ((pal.len() - 1) as u32).leading_zeros()).max(4);
+            let mask: u32 = if bits >= 32 { u32::MAX } else { (1u32 << bits) - 1 };
+
+            let put = |i: usize, gi: u16, grid: &mut Vec<u16>, empty: &mut bool| {
+                if gi == 0 {
+                    return;
+                }
+                let y = (i >> 8) as i32;
+                if y < y_lo || y > y_hi {
+                    return;
+                }
+                grid[(sy + y - y_min) as usize * 256 + (i & 255)] = gi;
+                *empty = false;
+            };
+
+            if data_version < 2527 {
+                let mut w = 0usize;
+                let mut off = 0u32;
+                for i in 0..4096 {
+                    let mut v = data.get(w).copied().unwrap_or(0) >> off;
+                    if off + bits > 32 {
+                        v |= data.get(w + 1).copied().unwrap_or(0) << (32 - off);
+                    }
+                    off += bits;
+                    if off >= 32 {
+                        w += (off >> 5) as usize;
+                        off &= 31;
+                    }
+                    if let Some(&gi) = map.get((v & mask) as usize) {
+                        put(i, gi, &mut out.grid, &mut out.empty);
+                    }
+                }
+                continue;
+            }
+
+            let vpl = 64 / bits;
+            let longs = data.len() / 2;
+            let mut i = 0usize;
+            for li in 0..longs {
+                if i >= 4096 {
+                    break;
+                }
+                let lo = data[li * 2];
+                let hi = data[li * 2 + 1];
+                for j in 0..vpl {
+                    if i >= 4096 {
+                        break;
+                    }
+                    let off = j * bits;
+                    let v = if off + bits <= 32 {
+                        (lo >> off) & mask
+                    } else if off >= 32 {
+                        (hi >> (off - 32)) & mask
+                    } else {
+                        ((lo >> off) | (hi << (32 - off))) & mask
+                    };
+                    if let Some(&gi) = map.get(v as usize) {
+                        put(i, gi, &mut out.grid, &mut out.empty);
+                    }
+                    i += 1;
+                }
+            }
+        }
+        Some(out)
     }
 }

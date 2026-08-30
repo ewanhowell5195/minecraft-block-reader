@@ -1,5 +1,3 @@
-import { readNBT, readStructure } from "./nbt.js"
-import { readLitematic, readSchem, readMcstructure } from "./formats.js"
 import { readWorld } from "./world.js"
 import { readStructureFast } from "./fast.js"
 
@@ -19,13 +17,9 @@ export async function read(src, { region, dimension, onProgress } = {}) {
   const bytes = await bytesOf(src)
   const fast = await readStructureFast(bytes)
   if (fast) return fast
-  try {
-    const root = await readNBT(bytes)
-    if (root.Regions) return readLitematic(root)
-    if (root.Schematic || (root.Palette && (root.BlockData || root.Data) && root.Width)) return readSchem(root)
-    if (root.structure?.block_indices) return readMcstructure(root)
-    if (root.blocks && (root.palette || root.palettes || root.size)) return readStructure(root)
-  } catch {}
+  const { readStructureJs } = await import("./js-reader.js")
+  const js = await readStructureJs(bytes)
+  if (js) return js
   if (bytes.length >= 8192 && !(bytes.length & 4095)) {
     try { return await readWorld(bytes, { region, dimension, onProgress }) } catch {}
   }

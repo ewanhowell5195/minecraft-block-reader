@@ -1,4 +1,4 @@
-import { readNBT, readStructure } from "./nbt.js"
+import { readNBT } from "./nbt.js"
 import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast } from "./fast.js"
 import { normState, REAL_AIR } from "./state.js"
 import { withBlocks, withRaw } from "./blocks.js"
@@ -159,7 +159,10 @@ function makeWorld(world) {
     const entry = world.structureEntries.get(rel)
     if (!entry) throw new Error("no generated structure " + rel)
     const bytes = await unzipEntry(entry)
-    return await readStructureFast(bytes) ?? readStructure(bytes)
+    const fast = await readStructureFast(bytes)
+    if (fast) return fast
+    const { readStructure } = await import("./js-reader.js")
+    return readStructure(bytes)
   }
   return world
 }

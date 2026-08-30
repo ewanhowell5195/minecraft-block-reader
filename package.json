@@ -14,7 +14,8 @@
     }
   },
   "files": [
-    "src/"
+    "src/",
+    "wasm/"
   ],
   "repository": {
     "type": "git",
@@ -36,6 +37,8 @@
   ],
   "scripts": {
     "test": "node --test",
+    "build:wasm": "cd rust && wasm-pack build --target web --release --features wasm && node -e \"const{cpSync}=require('fs');for(const f of ['minecraft_block_reader.js','minecraft_block_reader_bg.wasm','minecraft_block_reader.d.ts'])cpSync('pkg/'+f,'../wasm/'+f)\"",
+    "version": "node scripts/sync-version.js",
     "prepublishOnly": "node --test",
     "structure": "node examples/structure.js",
     "world": "node examples/world.js"

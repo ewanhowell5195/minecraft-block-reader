@@ -42,15 +42,18 @@ export interface BlockBox {
   includeAir?: boolean
 }
 
-export interface BlockResult {
+export interface Blocks {
   palette: BlockState[]
   blocks: Block[]
   entities: Entity[]
-  chunks: { read: number, missing: number, outdated: number }
   /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
   readonly raw: Int32Array
   /** Block entity nbt, keyed by the block's index in `raw`. */
   readonly blockNbt: Map<number, Record<string, unknown>>
+}
+
+export interface BlockResult extends Blocks {
+  chunks: { read: number, missing: number, outdated: number }
 }
 
 export interface ChunkGrid {
@@ -72,7 +75,7 @@ export interface World {
   blocks(box: BlockBox, onProgress?: Progress): Promise<BlockResult>
   chunk(chunk: ChunkRef): Promise<Record<string, unknown> | null>
   chunkExtent(chunk: ChunkRef, options?: { yMin?: number, yMax?: number }): Promise<{ top: number, bottom: number } | null>
-  chunkBlocks(chunk: ChunkRef, options?: ChunkBlocksOptions): Promise<BlockResult | null>
+  chunkBlocks(chunk: ChunkRef, options?: ChunkBlocksOptions): Promise<Blocks | null>
   chunkGrid(chunk: ChunkRef, options?: { yMin?: number, yMax?: number }): Promise<ChunkGrid>
   setDimension(id: string, onProgress?: Progress): Promise<World>
   structure(rel: string): Promise<Structure>
@@ -95,15 +98,7 @@ export interface ChunkBlocksOptions {
   includeAir?: boolean
 }
 
-export function chunkBlocks(nbt: Record<string, unknown> | null | undefined, options?: ChunkBlocksOptions): {
-  palette: BlockState[]
-  blocks: Block[]
-  entities: Entity[]
-  /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
-  readonly raw: Int32Array
-  /** Block entity nbt, keyed by the block's index in `raw`. */
-  readonly blockNbt: Map<number, Record<string, unknown>>
-}
+export function chunkBlocks(nbt: Record<string, unknown> | null | undefined, options?: ChunkBlocksOptions): Blocks
 
 export type Keys = string | Iterable<string>
 

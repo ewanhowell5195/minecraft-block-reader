@@ -92,9 +92,25 @@ export async function chunkGridFast(handle, index, yMin, yMax) {
   return { palette, grid, beList, empty }
 }
 
-export function chunkExtentFast(handle, index) {
-  const e = handle.chunkExtent(index)
+export function chunkExtentFast(handle, index, yMin, yMax) {
+  const e = handle.chunkExtent(index, yMin, yMax)
   return e ? { top: e[1], bottom: e[0] } : null
+}
+
+export async function chunkBlocksFast(handle, index, yMin, yMax, includeAir) {
+  const packed = handle.chunkBlocks(index, yMin, yMax, includeAir)
+  if (!packed) return null
+  let palette, raw, extrasBytes
+  try {
+    palette = JSON.parse(packed.palette)
+    raw = packed.blocks
+    extrasBytes = packed.extras
+  } finally {
+    packed.free()
+  }
+  const extras = await readNBT(extrasBytes, { littleEndian: false })
+  const out = { palette, entities: entitiesOf(extras) }
+  return withBlocks(out, raw, extras.bi, extras.bn)
 }
 
 export async function boxQuery({ x0, y0, z0, x1, y1, z1, includeAir }) {

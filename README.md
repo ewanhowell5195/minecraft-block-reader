@@ -124,7 +124,8 @@ Opening a world scans it without loading it; everything block-level happens on d
 | `world.blocks(box, onProgress?)` | The blocks in a block-coordinate box (`{ x0, y0, z0, x1, y1, z1, includeAir }`, inclusive on every side, y bounds optional): one shared palette, the box's entities, block entity nbt attached. Ungenerated and pre-1.13 chunks aren't errors; the result's `chunks: { read, missing, outdated }` says what the box covered, so an empty result can tell "air" from "unexplored" from "too old" |
 | `world.chunks` | Every stored chunk, as `{ cx, cz, region, index }` |
 | `world.chunk(c)` | A chunk's NBT, with its entities folded in under `Entities` (the game stores them in separate region files) |
-| `world.chunkExtent(c)` | The chunk's occupied `{ top, bottom }`, from the palettes alone |
+| `world.chunkExtent(c, { yMin, yMax })` | The chunk's occupied `{ top, bottom }`, from the palettes alone. The y bounds are optional and judge a section by whether it overlaps them |
+| `world.chunkBlocks(c, { yMin, yMax, includeAir })` | One chunk's blocks, for walking a selection a chunk at a time instead of asking for a whole box. Null for a chunk that is missing or too old |
 | `world.chunkGrid(c, { yMin, yMax })` | The chunk as a dense voxel grid, for renderers that want O(1) neighbour lookups: `grid` is a `Uint16Array` of `256 * height` cells indexed `(y - yMin) * 256 + z * 16 + x`, holding 0 for air or a one-based index into `palette`, plus `beList` and an `empty` flag |
 | `world.dimension` | The current dimension id |
 | `world.dimensions` | The dimension ids, e.g. `["overworld", "the_nether"]` |

@@ -1,5 +1,5 @@
 import { readNBT } from "./nbt.js"
-import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast, chunkGridFast } from "./fast.js"
+import { readStructureFast, regionHandle, boxQuery, finishQuery, chunkExtentFast, chunkGridFast, chunkBlocksFast } from "./fast.js"
 import { normState, REAL_AIR } from "./state.js"
 import { withBlocks, withRaw } from "./blocks.js"
 
@@ -143,8 +143,9 @@ export async function readWorld(src, { region, dimension, onProgress } = {}) {
 function makeWorld(world) {
   world.blocks = (box, onProgress) => readBlocks(world, box, onProgress)
   world.chunk = chunk => readChunk(world, chunk)
-  world.chunkExtent = chunk => chunkYExtent(world, chunk)
+  world.chunkExtent = (chunk, opts) => chunkYExtent(world, chunk, opts)
   world.chunkGrid = (chunk, opts) => readChunkGrid(world, chunk, opts)
+  world.chunkBlocks = (chunk, opts) => readChunkBlocks(world, chunk, opts)
   world.setDimension = async (id, onProgress) => {
     const d = world.dims?.find(d => d.id === id)
     if (!d) throw new Error("unknown dimension " + id)
@@ -371,19 +372,34 @@ async function readChunk(world, chunk) {
 const EXTENT_ONLY = new Set(["sections", "Level", "DataVersion"])
 const EXTENT_SKIP = new Set([...CHUNK_SKIP, "data", "BlockStates", "TileEntities", "Entities"])
 
-async function chunkYExtent(world, chunk) {
+async function chunkYExtent(world, chunk, { yMin = -Infinity, yMax = Infinity } = {}) {
   const bytes = await regionData(world, "region", chunk.region)
   const handle = bytes ? await regionHandle(bytes) : null
-  if (handle) return chunkExtentFast(handle, chunk.index)
+  if (handle) return chunkExtentFast(handle, chunk.index, yMin, yMax)
   const nbt = bytes ? await readChunkFrom(bytes, chunk.index, EXTENT_ONLY, EXTENT_SKIP) : null
   let top = -Infinity, bottom = Infinity
   for (const s of nbt?.sections ?? []) {
     const pal = s.block_states?.palette
-    if (!pal || !pal.some(e => !REAL_AIR.test(e?.id ?? ""))) continue
+    if (!pal || s.Y * 16 + 15 < yMin || s.Y * 16 > yMax) continue
+    if (!pal.some(e => !REAL_AIR.test(e?.id ?? ""))) continue
     if (s.Y * 16 + 15 > top) top = s.Y * 16 + 15
     if (s.Y * 16 < bottom) bottom = s.Y * 16
   }
   return top === -Infinity ? null : { top, bottom }
+}
+
+// One chunk's blocks, for callers walking a selection a chunk at a time rather
+// than asking for a whole box.
+async function readChunkBlocks(world, chunk, { yMin = -Infinity, yMax = Infinity, includeAir = false } = {}) {
+  const bytes = await regionData(world, "region", chunk.region)
+  const handle = bytes ? await regionHandle(bytes) : null
+  if (handle) {
+    const out = await chunkBlocksFast(handle, chunk.index, yMin, yMax, includeAir)
+    if (out) return out
+  }
+  const nbt = await readChunk(world, chunk)
+  if (!nbt?.sections) return null
+  return chunkBlocks(nbt, { yMin, yMax, includeAir })
 }
 
 // indices are bit-packed low-to-high; before 20w17a (DataVersion 2527, the

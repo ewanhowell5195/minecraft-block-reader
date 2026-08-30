@@ -71,7 +71,8 @@ export interface World {
   structures: string[]
   blocks(box: BlockBox, onProgress?: Progress): Promise<BlockResult>
   chunk(chunk: ChunkRef): Promise<Record<string, unknown> | null>
-  chunkExtent(chunk: ChunkRef): Promise<{ top: number, bottom: number } | null>
+  chunkExtent(chunk: ChunkRef, options?: { yMin?: number, yMax?: number }): Promise<{ top: number, bottom: number } | null>
+  chunkBlocks(chunk: ChunkRef, options?: ChunkBlocksOptions): Promise<BlockResult | null>
   chunkGrid(chunk: ChunkRef, options?: { yMin?: number, yMax?: number }): Promise<ChunkGrid>
   setDimension(id: string, onProgress?: Progress): Promise<World>
   structure(rel: string): Promise<Structure>

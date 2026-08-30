@@ -46,8 +46,10 @@ impl Region {
         Some(crate::chunk::chunk_blocks(&nbt, opts))
     }
 
-    /// `(bottom, top)` of the non air blocks, or nothing when the chunk is empty.
-    pub fn chunk_extent(&self, index: usize) -> Option<(i32, i32)> {
+    /// `(bottom, top)` of the non air blocks, or nothing when the chunk holds
+    /// none inside `y_min..=y_max`. Sections are judged by their palette, so a
+    /// section counts when it overlaps the range and is not all air.
+    pub fn chunk_extent(&self, index: usize, y_min: f64, y_max: f64) -> Option<(i32, i32)> {
         let nbt = read_chunk_extent(&self.bytes, index)?;
         let Some(Value::List(_, sections)) = nbt.get("sections") else { return None };
         let mut top = i32::MIN;
@@ -56,10 +58,13 @@ impl Region {
             let Some(sc) = s.as_compound() else { continue };
             let Some(bs) = sc.get("block_states").and_then(|v| v.as_compound()) else { continue };
             let Some(Value::List(_, pal)) = bs.get("palette") else { continue };
+            let y = sc.get("Y").and_then(|v| v.as_i64()).unwrap_or(0) as i32 * 16;
+            if ((y + 15) as f64) < y_min || (y as f64) > y_max {
+                continue;
+            }
             if !pal.iter().any(|e| !is_real_air(&norm_state(e).unwrap_or_default().id)) {
                 continue;
             }
-            let y = sc.get("Y").and_then(|v| v.as_i64()).unwrap_or(0) as i32 * 16;
             top = top.max(y + 15);
             bottom = bottom.min(y);
         }

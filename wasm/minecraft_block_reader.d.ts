@@ -53,9 +53,13 @@ export class Region {
     free(): void;
     [Symbol.dispose](): void;
     /**
+     * Blocks for one chunk, as a flat `[state, x, y, z, ...]` run.
+     */
+    chunkBlocks(index: number, y_min: number, y_max: number, include_air: boolean): Packed | undefined;
+    /**
      * `[bottom, top]` of the non air blocks, or nothing when the chunk is empty.
      */
-    chunkExtent(index: number): Int32Array | undefined;
+    chunkExtent(index: number, y_min: number, y_max: number): Int32Array | undefined;
     chunkGrid(index: number, y_min: number, y_max: number): PackedGrid | undefined;
     constructor(bytes: Uint8Array);
 }
@@ -85,7 +89,8 @@ export interface InitOutput {
     readonly packedgrid_grid: (a: number) => [number, number];
     readonly packedgrid_palette: (a: number) => [number, number];
     readonly readStructure: (a: number, b: number) => number;
-    readonly region_chunkExtent: (a: number, b: number) => [number, number];
+    readonly region_chunkBlocks: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly region_chunkExtent: (a: number, b: number, c: number, d: number) => [number, number];
     readonly region_chunkGrid: (a: number, b: number, c: number, d: number) => number;
     readonly region_new: (a: number, b: number) => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;

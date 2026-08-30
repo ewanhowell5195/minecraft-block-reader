@@ -314,7 +314,7 @@ fn a_region_reads_its_chunks_from_plain_rust() {
     let nbt = one_section_chunk(vec![state("minecraft:stone")], None, 0);
     let region = Region::new(region_bytes(7, &nbt));
 
-    assert_eq!(region.chunk_extent(7), Some((0, 15)));
+    assert_eq!(region.chunk_extent(7, f64::NEG_INFINITY, f64::INFINITY), Some((0, 15)));
     assert!(region.chunk(9).is_none());
 
     let blocks = region.chunk_blocks(7, &ChunkOptions::default()).unwrap();

@@ -214,12 +214,26 @@ export class Region {
         wasm.__wbg_region_free(ptr, 0);
     }
     /**
+     * Blocks for one chunk, as a flat `[state, x, y, z, ...]` run.
+     * @param {number} index
+     * @param {number} y_min
+     * @param {number} y_max
+     * @param {boolean} include_air
+     * @returns {Packed | undefined}
+     */
+    chunkBlocks(index, y_min, y_max, include_air) {
+        const ret = wasm.region_chunkBlocks(this.__wbg_ptr, index, y_min, y_max, include_air);
+        return ret === 0 ? undefined : Packed.__wrap(ret);
+    }
+    /**
      * `[bottom, top]` of the non air blocks, or nothing when the chunk is empty.
      * @param {number} index
+     * @param {number} y_min
+     * @param {number} y_max
      * @returns {Int32Array | undefined}
      */
-    chunkExtent(index) {
-        const ret = wasm.region_chunkExtent(this.__wbg_ptr, index);
+    chunkExtent(index, y_min, y_max) {
+        const ret = wasm.region_chunkExtent(this.__wbg_ptr, index, y_min, y_max);
         let v1;
         if (ret[0] !== 0) {
             v1 = getArrayI32FromWasm0(ret[0], ret[1]).slice();

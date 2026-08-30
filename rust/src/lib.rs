@@ -157,8 +157,22 @@ mod bindings {
 
         /// `[bottom, top]` of the non air blocks, or nothing when the chunk is empty.
         #[wasm_bindgen(js_name = chunkExtent)]
-        pub fn chunk_extent(&self, index: usize) -> Option<Vec<i32>> {
-            self.inner.chunk_extent(index).map(|(bottom, top)| vec![bottom, top])
+        pub fn chunk_extent(&self, index: usize, y_min: f64, y_max: f64) -> Option<Vec<i32>> {
+            self.inner.chunk_extent(index, y_min, y_max).map(|(bottom, top)| vec![bottom, top])
+        }
+
+        /// Blocks for one chunk, as a flat `[state, x, y, z, ...]` run.
+        #[wasm_bindgen(js_name = chunkBlocks)]
+        pub fn chunk_blocks(
+            &self,
+            index: usize,
+            y_min: f64,
+            y_max: f64,
+            include_air: bool,
+        ) -> Option<Packed> {
+            let opts = ChunkOptions { y_min, y_max, include_air, ..Default::default() };
+            let cb = self.inner.chunk_blocks(index, &opts)?;
+            Some(Packed { inner: out::pack_chunk(&cb) })
         }
     }
 

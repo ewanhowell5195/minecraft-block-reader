@@ -1,4 +1,11 @@
-// `raw` is non-enumerable, so it stays out of JSON and out of deep equality.
+function withBlockNbt(result, build) {
+  let cache
+  Object.defineProperty(result, "blockNbt", {
+    enumerable: false,
+    configurable: true,
+    get: () => cache ??= build()
+  })
+}
 
 export function withRaw(result) {
   let cache
@@ -18,6 +25,12 @@ export function withRaw(result) {
       }
       return cache
     }
+  })
+  withBlockNbt(result, () => {
+    const out = new Map()
+    const blocks = result.blocks
+    for (let i = 0; i < blocks.length; i++) if (blocks[i].nbt) out.set(i, blocks[i].nbt)
+    return out
   })
   return result
 }
@@ -39,6 +52,11 @@ export function withBlocks(result, raw, nbtIndices, nbtValues) {
       for (let k = 0; k < nbtIndices.length; k++) cache[nbtIndices[k]].nbt = nbtValues[k]
       return cache
     }
+  })
+  withBlockNbt(result, () => {
+    const out = new Map()
+    for (let k = 0; k < nbtIndices.length; k++) out.set(nbtIndices[k], nbtValues[k])
+    return out
   })
   return result
 }

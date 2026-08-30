@@ -21,6 +21,8 @@ export interface Structure {
   entities: Entity[]
   /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
   readonly raw: Int32Array
+  /** Block entity nbt, keyed by the block's index in `raw`. */
+  readonly blockNbt: Map<number, Record<string, unknown>>
 }
 
 export interface ChunkRef {
@@ -47,6 +49,16 @@ export interface BlockResult {
   chunks: { read: number, missing: number, outdated: number }
   /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
   readonly raw: Int32Array
+  /** Block entity nbt, keyed by the block's index in `raw`. */
+  readonly blockNbt: Map<number, Record<string, unknown>>
+}
+
+export interface ChunkGrid {
+  palette: BlockState[]
+  /** `256 * height` cells of `(y - yMin) * 256 + z * 16 + x`, 0 for air or a one-based palette index. */
+  grid: Uint16Array
+  beList: { x: number, y: number, z: number, nbt: Record<string, unknown> }[]
+  empty: boolean
 }
 
 export type Progress = (done: number, total: number) => void
@@ -60,6 +72,7 @@ export interface World {
   blocks(box: BlockBox, onProgress?: Progress): Promise<BlockResult>
   chunk(chunk: ChunkRef): Promise<Record<string, unknown> | null>
   chunkExtent(chunk: ChunkRef): Promise<{ top: number, bottom: number } | null>
+  chunkGrid(chunk: ChunkRef, options?: { yMin?: number, yMax?: number }): Promise<ChunkGrid>
   setDimension(id: string, onProgress?: Progress): Promise<World>
   structure(rel: string): Promise<Structure>
   file(path: string): Promise<Uint8Array | null>
@@ -87,6 +100,8 @@ export function chunkBlocks(nbt: Record<string, unknown> | null | undefined, opt
   entities: Entity[]
   /** The same blocks as a flat `[state, x, y, z, state, x, y, z, …]` run. */
   readonly raw: Int32Array
+  /** Block entity nbt, keyed by the block's index in `raw`. */
+  readonly blockNbt: Map<number, Record<string, unknown>>
 }
 
 export type Keys = string | Iterable<string>

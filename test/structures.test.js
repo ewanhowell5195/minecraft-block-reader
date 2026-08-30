@@ -324,3 +324,15 @@ test("the built wasm is not older than the rust it came from", async t => {
   assert.ok(built >= src, "rust/ has changed since wasm/ was built, run npm run build:wasm")
 })
 
+
+test("blockNbt reaches the block entities without building the objects", async () => {
+  const s = await read(vanillaStructure())
+  const withNbt = s.blocks.flatMap((b, i) => b.nbt ? [[i, b.nbt]] : [])
+  assert.deepEqual([...s.blockNbt.entries()], withNbt)
+  assert.equal(JSON.parse(JSON.stringify(s)).blockNbt, undefined)
+
+  // the js reader has to agree, since it builds the map the other way round
+  const { readStructureJs } = await import("../src/js-reader.js")
+  const js = await readStructureJs(vanillaStructure())
+  assert.deepEqual([...js.blockNbt.entries()], withNbt)
+})

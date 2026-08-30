@@ -623,14 +623,14 @@ function chunkGridJs(nbt, yMin, yMax) {
   const grid = new Uint16Array(256 * height)
   const palette = []
   const palIdx = new Map()
-  const beList = []
+  const blockEntities = []
   let empty = true
-  if (!nbt?.sections) return { palette, grid, beList, empty }
+  if (!nbt?.sections) return { palette, grid, blockEntities, empty }
 
   for (const be of nbt.block_entities ?? []) {
     if (typeof be?.x !== "number" || be.y < yMin || be.y > yMax) continue
     const { x, y, z, keepPacked, ...rest } = be
-    beList.push({ x, y, z, nbt: rest })
+    blockEntities.push({ x, y, z, nbt: rest })
   }
 
   for (const s of nbt.sections) {
@@ -694,5 +694,5 @@ function chunkGridJs(nbt, yMin, yMax) {
       }
     }
   }
-  return { palette, grid, beList, empty }
+  return { palette, grid, blockEntities, empty }
 }

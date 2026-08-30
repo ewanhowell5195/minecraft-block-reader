@@ -60,7 +60,7 @@ export interface ChunkGrid {
   palette: BlockState[]
   /** `256 * height` cells of `(y - yMin) * 256 + z * 16 + x`, 0 for air or a one-based palette index. */
   grid: Uint16Array
-  beList: { x: number, y: number, z: number, nbt: Record<string, unknown> }[]
+  blockEntities: { x: number, y: number, z: number, nbt: Record<string, unknown> }[]
   empty: boolean
 }
 

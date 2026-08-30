@@ -86,10 +86,10 @@ export async function chunkGridFast(handle, index, yMin, yMax) {
     packed.free()
   }
   const extras = await readNBT(extrasBytes, { littleEndian: false })
-  const beList = extras.bn.map((nbt, i) => ({
+  const blockEntities = extras.bn.map((nbt, i) => ({
     x: extras.bp[i * 3], y: extras.bp[i * 3 + 1], z: extras.bp[i * 3 + 2], nbt
   }))
-  return { palette, grid, beList, empty }
+  return { palette, grid, blockEntities, empty }
 }
 
 export function chunkExtentFast(handle, index, yMin, yMax) {

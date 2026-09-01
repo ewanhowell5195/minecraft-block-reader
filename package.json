@@ -9,13 +9,20 @@
   "types": "./src/index.d.ts",
   "exports": {
     ".": {
-      "types": "./src/index.d.ts",
-      "default": "./src/index.js"
+      "node": {
+        "types": "./src/index.d.ts",
+        "default": "./src/index.js"
+      },
+      "default": {
+        "types": "./src/index.d.ts",
+        "default": "./dist/minecraft-block-reader.min.js"
+      }
     }
   },
   "files": [
     "src/",
-    "wasm/"
+    "wasm/",
+    "dist/"
   ],
   "repository": {
     "type": "git",
@@ -38,12 +45,16 @@
   "scripts": {
     "test": "node --test",
     "build:wasm": "cd rust && wasm-pack build --target web --release --features wasm && node -e \"const{cpSync}=require('fs');for(const f of ['minecraft_block_reader.js','minecraft_block_reader_bg.wasm','minecraft_block_reader.d.ts'])cpSync('pkg/'+f,'../wasm/'+f)\"",
+    "build": "node build.js",
     "version": "node scripts/sync-version.js",
-    "prepublishOnly": "npm run build:wasm && node --test",
+    "prepublishOnly": "npm run build:wasm && npm run build && node --test",
     "structure": "node examples/structure.js",
     "world": "node examples/world.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

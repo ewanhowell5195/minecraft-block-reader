@@ -394,14 +394,43 @@ fn a_chunk_grid_carries_its_biomes() {
     let region = Region::new(region_bytes(3, &nbt));
     let g = region.chunk_grid(3, 0, 15).unwrap();
     assert_eq!(g.biome_palette, vec!["minecraft:plains", "minecraft:desert"]);
-    assert_eq!(g.biomes.len(), 64);
-    assert_eq!(g.biomes[5], 2);
-    assert!(g.biomes.iter().enumerate().all(|(i, &c)| c == if i == 5 { 2 } else { 1 }));
+    assert_eq!(g.biomes.len(), 256 * 16);
+    // the cell spreads over blocks x 4..7, y 0..3, z 4..7
+    let at = |x: usize, y: usize, z: usize| g.biomes[y * 256 + z * 16 + x];
+    assert_eq!(at(4, 0, 4), 2);
+    assert_eq!(at(7, 3, 7), 2);
+    assert_eq!(at(8, 0, 4), 1);
+    assert_eq!(at(4, 4, 4), 1);
+    assert_eq!(g.biomes.iter().filter(|&&c| c == 2).count(), 64);
 
-    // a y range starting mid section keeps the cell rows it covers
-    let part = region.chunk_grid(3, 4, 15).unwrap();
-    assert_eq!(part.biomes.len(), 48);
-    assert_eq!(part.biomes[0], 1);
+    // a y range starting mid section keeps the rows it covers
+    let part = region.chunk_grid(3, 2, 15).unwrap();
+    assert_eq!(part.biomes.len(), 256 * 14);
+    assert_eq!(part.biomes[4 * 16 + 4], 2);
+    assert_eq!(part.biomes[2 * 256 + 4 * 16 + 4], 1);
+}
+
+#[test]
+fn a_26_4_chunk_stores_a_biome_per_block() {
+    let mut nbt = one_section_chunk(vec![state("minecraft:stone")], None, 0);
+    nbt.entries.retain(|(k, _)| k != "DataVersion");
+    nbt.insert("DataVersion", Value::Int(5119));
+    let mut biomes = Compound::default();
+    biomes.insert("palette", Value::List(8, vec![s("minecraft:plains"), s("minecraft:desert")]));
+    // one bit per block, 64 per long: block (3, 2, 1) is index 2 * 256 + 1 * 16 + 3 = 531
+    let mut data = vec![0i64; 64];
+    data[531 / 64] = 1 << (531 % 64);
+    biomes.insert("data", Value::LongArray(data));
+    if let Some(Value::List(_, sections)) = nbt.entries.iter_mut().find(|(k, _)| k == "sections").map(|(_, v)| v) {
+        if let Some(Value::Compound(sc)) = sections.first_mut() {
+            sc.insert("biomes", Value::Compound(biomes));
+        }
+    }
+    let region = Region::new(region_bytes(3, &nbt));
+    let g = region.chunk_grid(3, 0, 15).unwrap();
+    assert_eq!(g.biomes[531], 2);
+    assert_eq!(g.biomes.iter().filter(|&&c| c == 2).count(), 1);
+    assert_eq!(g.biomes[530], 1);
 }
 
 #[test]

@@ -67,7 +67,7 @@ export interface ChunkGrid {
 
 export interface ChunkBiomes {
   palette: string[]
-  /** One cell per 4x4x4 blocks, `((y >> 2) - (yMin >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)`, 0 when unknown or a one-based palette index. */
+  /** One byte per block, indexed like the block grid: 0 when unknown or a one-based palette index. */
   grid: Uint8Array
 }
 

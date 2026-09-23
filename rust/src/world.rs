@@ -149,8 +149,9 @@ pub struct ChunkGrid {
     pub block_entities: Vec<([i32; 3], Compound)>,
     pub empty: bool,
     pub biome_palette: Vec<String>,
-    /// One cell per 4x4x4 blocks: `((y >> 2) - (y_min >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)`,
-    /// 0 when unknown or a one based index into `biome_palette`.
+    /// One byte per block, indexed like `grid`: 0 when unknown or a one based
+    /// index into `biome_palette`. Pre 26.4 chunks store a biome per 4x4x4
+    /// blocks, which spreads over the blocks it covers.
     pub biomes: Vec<u8>,
 }
 
@@ -158,18 +159,17 @@ impl Region {
     pub fn chunk_grid(&self, index: usize, y_min: i32, y_max: i32) -> Option<ChunkGrid> {
         let nbt = self.chunk(index)?;
         let height = (y_max - y_min + 1).max(0) as usize;
-        let cy_min = y_min >> 2;
-        let cell_rows = ((y_max >> 2) - cy_min + 1).max(0) as usize;
         let mut out = ChunkGrid {
             palette: Vec::new(),
             grid: vec![0u16; 256 * height],
             block_entities: Vec::new(),
             empty: true,
             biome_palette: Vec::new(),
-            biomes: vec![0u8; 16 * cell_rows],
+            biomes: vec![0u8; 256 * height],
         };
         let Some(Value::List(_, sections)) = nbt.get("sections") else { return Some(out) };
 
+        let block_biomes = nbt.get("DataVersion").and_then(|v| v.as_i64()).unwrap_or(0) >= 5119;
         let mut biome_index: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
         for s in sections {
             let Some(sc) = s.as_compound() else { continue };
@@ -190,19 +190,23 @@ impl Region {
                     if let Some(i) = biome_index.get(&name) {
                         return *i;
                     }
+                    if out.biome_palette.len() >= 255 {
+                        return 0;
+                    }
                     let i = out.biome_palette.len() as u8 + 1;
                     out.biome_palette.push(name.clone());
                     biome_index.insert(name, i);
                     i
                 })
                 .collect();
-            let cy_lo = ((y_min - sy).max(0) >> 2) as usize;
-            let cy_hi = ((y_max - sy).min(15) >> 2) as usize;
-            let base = (sy >> 2) - cy_min;
-            let row = |cy: usize| (base + cy as i32) as usize * 16;
+            let y_lo = (y_min - sy).max(0) as usize;
+            let y_hi = (y_max - sy).min(15) as usize;
+            let row = |y: usize| (sy + y as i32 - y_min) as usize * 256;
             if pal.len() == 1 {
-                for cy in cy_lo..=cy_hi {
-                    out.biomes[row(cy)..row(cy) + 16].fill(map[0]);
+                if map[0] != 0 {
+                    for y in y_lo..=y_hi {
+                        out.biomes[row(y)..row(y) + 256].fill(map[0]);
+                    }
                 }
                 continue;
             }
@@ -213,11 +217,7 @@ impl Region {
             let bits = (32 - ((pal.len() - 1) as u32).leading_zeros()).max(1);
             let mask: u32 = (1u32 << bits) - 1;
             let vpl = (64 / bits) as usize;
-            for i in 0..64usize {
-                let cy = i >> 4;
-                if cy < cy_lo || cy > cy_hi {
-                    continue;
-                }
+            let read = |i: usize| -> usize {
                 let off = (i % vpl) as u32 * bits;
                 let lo = data.get(i / vpl * 2).copied().unwrap_or(0);
                 let hi = data.get(i / vpl * 2 + 1).copied().unwrap_or(0);
@@ -228,8 +228,35 @@ impl Region {
                 } else {
                     ((lo >> off) | (hi << (32 - off))) & mask
                 };
-                if let Some(&gi) = map.get(v as usize) {
-                    out.biomes[row(cy) + (i & 15)] = gi;
+                v as usize
+            };
+            if block_biomes {
+                for i in 0..4096usize {
+                    let y = i >> 8;
+                    if y < y_lo || y > y_hi {
+                        continue;
+                    }
+                    if let Some(&gi) = map.get(read(i)) {
+                        if gi != 0 {
+                            out.biomes[row(y) + (i & 255)] = gi;
+                        }
+                    }
+                }
+            } else {
+                for i in 0..64usize {
+                    let Some(&gi) = map.get(read(i)) else { continue };
+                    if gi == 0 {
+                        continue;
+                    }
+                    let (cx, cz, cy) = (i & 3, (i >> 2) & 3, i >> 4);
+                    for y in cy * 4..cy * 4 + 4 {
+                        if y < y_lo || y > y_hi {
+                            continue;
+                        }
+                        for z in cz * 4..cz * 4 + 4 {
+                            out.biomes[row(y) + z * 16 + cx * 4..row(y) + z * 16 + cx * 4 + 4].fill(gi);
+                        }
+                    }
                 }
             }
         }

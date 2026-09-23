@@ -65,19 +65,45 @@ test("chunkGrid and chunkBiomes: the biome of every 4x4x4 cell", async () => {
   }))
   const world = await read(buildRegion(new Map([[CHUNK_INDEX, nbt]])), { region: [0, -1] })
   const c = world.chunks[0]
-  const at = (b, yMin, x, y, z) => b.palette[b.grid[((y >> 2) - (yMin >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)] - 1]
+  const at = (b, yMin, x, y, z) => b.palette[b.grid[(y - yMin) * 256 + z * 16 + x] - 1]
   const { biomes } = await world.chunkGrid(c, { yMin: 64, yMax: 95 })
   assert.deepEqual(biomes.palette, ["minecraft:plains", "minecraft:desert"])
-  assert.equal(biomes.grid.length, 8 * 16)
+  assert.equal(biomes.grid.length, 32 * 256)
   assert.equal(at(biomes, 64, 0, 64, 0), "minecraft:plains")
   assert.equal(at(biomes, 64, 12, 68, 8), "minecraft:desert")
+  assert.equal(at(biomes, 64, 15, 71, 11), "minecraft:desert")
+  assert.equal(at(biomes, 64, 11, 68, 8), "minecraft:plains")
   assert.equal(at(biomes, 64, 0, 80, 0), "minecraft:desert")
   const js = chunkBiomes(await world.chunk(c), { yMin: 64, yMax: 95 })
   assert.deepEqual(js.palette, biomes.palette)
   assert.deepEqual(Array.from(js.grid), Array.from(biomes.grid))
   const part = chunkBiomes(await world.chunk(c), { yMin: 70, yMax: 75 })
-  assert.equal(part.grid.length, 2 * 16)
+  assert.equal(part.grid.length, 6 * 256)
   assert.equal(at(part, 70, 12, 71, 8), "minecraft:desert")
+  assert.equal(at(part, 70, 12, 72, 8), "minecraft:plains")
+})
+
+test("26.4 chunks store a biome per block", async () => {
+  const blocks = new Array(4096).fill(0)
+  blocks[(2 << 8) | (1 << 4) | 3] = 1
+  const nbt = writeNBT(comp({
+    xPos: I(2), zPos: I(-1), DataVersion: I(5119),
+    sections: list([
+      comp({
+        Y: B(4),
+        block_states: comp({ palette: list([comp({ "": Str("minecraft:stone") })]) }),
+        biomes: comp({ palette: list([Str("minecraft:plains"), Str("minecraft:desert")]), data: longs(packChunk(blocks, 1)) })
+      })
+    ])
+  }))
+  const world = await read(buildRegion(new Map([[CHUNK_INDEX, nbt]])), { region: [0, -1] })
+  const { biomes } = await world.chunkGrid(world.chunks[0], { yMin: 64, yMax: 79 })
+  const at = (x, y, z) => biomes.palette[biomes.grid[(y - 64) * 256 + z * 16 + x] - 1]
+  assert.equal(at(3, 66, 1), "minecraft:desert")
+  assert.equal(at(4, 66, 1), "minecraft:plains")
+  assert.equal(Array.from(biomes.grid).filter(v => v === 2).length, 1)
+  const js = chunkBiomes(await world.chunk(world.chunks[0]), { yMin: 64, yMax: 79 })
+  assert.deepEqual(Array.from(js.grid), Array.from(biomes.grid))
 })
 
 test("chunkBlocks: y range and includeAir", async () => {

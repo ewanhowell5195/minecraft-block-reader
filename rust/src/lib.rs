@@ -199,7 +199,7 @@ mod bindings {
         pub fn grid(&self) -> Vec<u16> {
             self.grid.clone()
         }
-        /// biome cells, one per 4x4x4 blocks; their names sit in the extras as `bb`
+        /// one biome index per block, indexed like `grid`; the names sit in the extras as `bb`
         #[wasm_bindgen(getter)]
         pub fn biomes(&self) -> Vec<u8> {
             self.biomes.clone()

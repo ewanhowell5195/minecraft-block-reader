@@ -618,9 +618,9 @@ async function readChunkGrid(world, chunk, { yMin = -Infinity, yMax = Infinity }
   return chunkGridJs(await readChunk(world, chunk), yMin, yMax)
 }
 
-// The biome of every 4x4x4 cell in the y range, `((y >> 2) - (yMin >> 2)) * 16
-// + (z >> 2) * 4 + (x >> 2)`, holding 0 when unknown or a one-based index into
-// `palette`.
+// The biome of every block in the y range, indexed like the block grid, holding
+// 0 when unknown or a one-based index into `palette`. 26.4 stores a biome per
+// block; earlier chunks store one per 4x4x4 blocks, spread over the blocks it covers
 export function chunkBiomes(nbt, { yMin = -Infinity, yMax = Infinity } = {}) {
   const sections = nbt?.sections ?? []
   if (yMin === -Infinity || yMax === Infinity) {
@@ -628,10 +628,10 @@ export function chunkBiomes(nbt, { yMin = -Infinity, yMax = Infinity } = {}) {
     if (yMin === -Infinity) yMin = ys.length ? Math.min(...ys) : 0
     if (yMax === Infinity) yMax = ys.length ? Math.max(...ys) + 15 : -1
   }
-  const cyMin = yMin >> 2
-  const grid = new Uint8Array(16 * Math.max(0, (yMax >> 2) - cyMin + 1))
+  const grid = new Uint8Array(256 * Math.max(0, yMax - yMin + 1))
   const palette = []
   const palIdx = new Map()
+  const blockBiomes = (nbt?.DataVersion ?? 0) >= 5119
   for (const s of sections) {
     const pal = s.biomes?.palette
     if (!pal) continue
@@ -641,33 +641,47 @@ export function chunkBiomes(nbt, { yMin = -Infinity, yMax = Infinity } = {}) {
       const name = typeof e === "string" ? e : e?.[""] ?? ""
       let i = palIdx.get(name)
       if (i === undefined) {
+        if (palette.length >= 255) return 0
         i = palette.length + 1
         palette.push(name)
         palIdx.set(name, i)
       }
       return i
     })
-    const cyLo = Math.max(0, yMin - sy) >> 2, cyHi = Math.min(15, yMax - sy) >> 2
-    const base = (sy >> 2) - cyMin
+    const yLo = Math.max(0, yMin - sy), yHi = Math.min(15, yMax - sy)
+    const row = y => (sy + y - yMin) * 256
     if (pal.length === 1) {
-      for (let cy = cyLo; cy <= cyHi; cy++) grid.fill(map[0], (base + cy) * 16, (base + cy) * 16 + 16)
+      if (map[0]) for (let y = yLo; y <= yHi; y++) grid.fill(map[0], row(y), row(y) + 256)
       continue
     }
     const data = s.biomes.data ?? []
     const bits = Math.max(1, 32 - Math.clz32(pal.length - 1))
     const mask = (1 << bits) - 1
     const vpl = Math.floor(64 / bits)
-    for (let i = 0; i < 64; i++) {
-      const cy = i >> 4
-      if (cy < cyLo || cy > cyHi) continue
+    const read = i => {
       const li = Math.floor(i / vpl), off = (i % vpl) * bits
       const lo = data[li * 2], hi = data[li * 2 + 1]
-      let v
-      if (off + bits <= 32) v = (lo >>> off) & mask
-      else if (off >= 32) v = (hi >>> (off - 32)) & mask
-      else v = ((lo >>> off) | (hi << (32 - off))) & mask
-      const gi = map[v]
-      if (gi) grid[(base + cy) * 16 + (i & 15)] = gi
+      if (off + bits <= 32) return (lo >>> off) & mask
+      if (off >= 32) return (hi >>> (off - 32)) & mask
+      return ((lo >>> off) | (hi << (32 - off))) & mask
+    }
+    if (blockBiomes) {
+      for (let i = 0; i < 4096; i++) {
+        const y = i >> 8
+        if (y < yLo || y > yHi) continue
+        const gi = map[read(i)]
+        if (gi) grid[row(y) + (i & 255)] = gi
+      }
+      continue
+    }
+    for (let i = 0; i < 64; i++) {
+      const gi = map[read(i)]
+      if (!gi) continue
+      const cx = i & 3, cz = (i >> 2) & 3, cy = i >> 4
+      for (let y = cy * 4; y < cy * 4 + 4; y++) {
+        if (y < yLo || y > yHi) continue
+        for (let z = cz * 4; z < cz * 4 + 4; z++) grid.fill(gi, row(y) + z * 16 + cx * 4, row(y) + z * 16 + cx * 4 + 4)
+      }
     }
   }
   return { palette, grid }

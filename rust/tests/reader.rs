@@ -50,6 +50,11 @@ fn state_properties_keep_their_order_and_drop_when_empty() {
 
     let bare = Value::Compound(c(vec![("Name", s("minecraft:stone"))]));
     assert!(norm_state(&bare).unwrap().properties.is_none());
+
+    let wrapped = Value::Compound(c(vec![("", s("minecraft:stone"))]));
+    let st = norm_state(&wrapped).unwrap();
+    assert_eq!(st.id, "minecraft:stone");
+    assert!(st.properties.is_none());
 }
 
 #[test]

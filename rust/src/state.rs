@@ -116,6 +116,9 @@ pub fn norm_state(v: &Value) -> Option<State> {
             }
         }
         Value::Compound(c) => {
+            if c.entries.len() == 1 && c.entries[0].0.is_empty() {
+                return norm_state(&c.entries[0].1);
+            }
             if let Some(Value::Str(name)) = c.get("Name") {
                 let properties = match c.get("Properties") {
                     Some(Value::Compound(p)) => Some(props_of(p)),

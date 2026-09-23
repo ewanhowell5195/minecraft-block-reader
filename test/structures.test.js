@@ -61,6 +61,19 @@ test("vanilla structure accepts gzip and new state fields", async () => {
   await bothAgree(raw, "vanilla gzip")
 })
 
+test("a bare block id wrapped for a mixed list unwraps to a state", async () => {
+  assert.deepEqual(normState({ "": "minecraft:stone" }), { id: "minecraft:stone" })
+  const raw = writeNBT(comp({
+    size: pos3(2, 1, 1),
+    palette: list([comp({ "": Str("minecraft:stone") }), comp({ id: Str("minecraft:oak_stairs"), properties: comp({ facing: Str("north") }) })]),
+    blocks: list([comp({ state: I(0), pos: pos3(0, 0, 0) }), comp({ state: I(1), pos: pos3(1, 0, 0) })]),
+    entities: list([])
+  }))
+  const s = await read(raw)
+  assert.deepEqual(s.palette, [{ id: "minecraft:stone" }, { id: "minecraft:oak_stairs", properties: { facing: "north" } }])
+  await bothAgree(raw, "wrapped bare id")
+})
+
 test("vanilla structure reads the plural palettes form", async () => {
   const raw = writeNBT(comp({
     size: pos3(1, 1, 1),

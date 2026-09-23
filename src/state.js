@@ -22,6 +22,8 @@ const STATE_STR = /^[\w./-]+(?::[\w./-]+)?(?:\[.*\])?$/
 export function normState(v) {
   if (typeof v === "string") return STATE_STR.test(v.trim()) ? parseState(v) : v
   if (!v || typeof v !== "object" || Array.isArray(v)) return v
+  const keys = Object.keys(v)
+  if (keys.length === 1 && keys[0] === "") return normState(v[""])
   if (typeof v.Name !== "string") return v
   return v.Properties ? { id: v.Name, properties: v.Properties } : { id: v.Name }
 }

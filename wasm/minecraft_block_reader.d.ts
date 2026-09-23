@@ -40,6 +40,10 @@ export class PackedGrid {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    /**
+     * one biome index per block, indexed like `grid`; the names sit in the extras as `bb`
+     */
+    readonly biomes: Uint8Array;
     readonly empty: boolean;
     /**
      * nbt bytes: `bp` block entity positions, `bn` their nbt
@@ -84,6 +88,7 @@ export interface InitOutput {
     readonly packed_palette: (a: number) => [number, number];
     readonly packed_size: (a: number) => [number, number];
     readonly packed_status: (a: number) => number;
+    readonly packedgrid_biomes: (a: number) => [number, number];
     readonly packedgrid_empty: (a: number) => number;
     readonly packedgrid_extras: (a: number) => [number, number];
     readonly packedgrid_grid: (a: number) => [number, number];

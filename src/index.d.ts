@@ -66,6 +66,7 @@ export interface ChunkGrid {
 }
 
 export interface ChunkBiomes {
+  /** Biome ids, such as `"minecraft:plains"`. */
   palette: string[]
   /** One byte per block, indexed like the block grid: 0 when unknown or a one-based palette index. */
   grid: Uint8Array
@@ -107,6 +108,9 @@ export interface ChunkBlocksOptions {
 }
 
 export function chunkBlocks(nbt: Record<string, unknown> | null | undefined, options?: ChunkBlocksOptions): Blocks
+
+/** The biome of every block in a chunk. Without a y range it covers every section the chunk has. */
+export function chunkBiomes(nbt: Record<string, unknown> | null | undefined, options?: { yMin?: number, yMax?: number }): ChunkBiomes
 
 export type Keys = string | Iterable<string>
 

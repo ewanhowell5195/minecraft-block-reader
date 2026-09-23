@@ -176,7 +176,7 @@ at(3, 66, 7)   // null, air
 blockEntities   // [{ x: 2493, y: 74, z: -1010, nbt: { id: "minecraft:beehive", … } }]
 ```
 
-`biomes` holds the chunk's biomes over the same y range, one byte per block indexed like `grid`. A cell holds 0 when the chunk has no biome data there, or a palette index with 1 added. 26.4 saves a biome per block; older chunks save one per 4x4x4 blocks, which fills the blocks it covers:
+`biomes` holds the chunk's biomes over the same y range, one byte per block indexed like `grid`. Its `palette` is biome ids; colors and climate come from the biome's own data, which the reader doesn't load. A cell holds 0 when the chunk has no biome data there, or a palette index with 1 added. 26.4 saves a biome per block; older chunks save one per 4x4x4 blocks, which fills the blocks it covers:
 
 ```js
 const { biomes } = await world.chunkGrid(c, { yMin: 60, yMax: 80 })
@@ -189,7 +189,7 @@ const biomeAt = (x, y, z) => {
 biomeAt(3, 64, 7)   // "minecraft:plains"
 ```
 
-`chunkBiomes(nbt, { yMin, yMax })` gives the same `{ palette, grid }` for chunk NBT you already have.
+`chunkBiomes(nbt, { yMin, yMax })` gives the same `{ palette, grid }` for chunk NBT you already have, over every section the chunk has when the y range is left out. Biomes are only read per chunk: `world.blocks` doesn't return them.
 
 ### NBT
 

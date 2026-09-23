@@ -10,10 +10,10 @@ const bytesOf = async src =>
     : ArrayBuffer.isView(src) ? new Uint8Array(src.buffer, src.byteOffset, src.byteLength)
     : new Uint8Array(await src.arrayBuffer())
 
-export async function read(src, { region, dimension, onProgress } = {}) {
+export async function read(src, { region, dimension, onProgress, cacheSize } = {}) {
   if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) src = await bytesOf(src)
   const head = await headBytes(src, 2)
-  if (head[0] === 0x50 && head[1] === 0x4b) return readWorld(src, { region, dimension, onProgress })
+  if (head[0] === 0x50 && head[1] === 0x4b) return readWorld(src, { region, dimension, onProgress, cacheSize })
   const bytes = await bytesOf(src)
   const fast = await readStructureFast(bytes)
   if (fast) return fast
@@ -21,7 +21,7 @@ export async function read(src, { region, dimension, onProgress } = {}) {
   const js = await readStructureJs(bytes)
   if (js) return js
   if (bytes.length >= 8192 && !(bytes.length & 4095)) {
-    try { return await readWorld(bytes, { region, dimension, onProgress }) } catch {}
+    try { return await readWorld(bytes, { region, dimension, onProgress, cacheSize }) } catch {}
   }
   throw new Error("couldn't detect the file format")
 }

@@ -129,12 +129,13 @@ async function entryPrefix(entry, want) {
   return out
 }
 
-export async function readWorld(src, { region, dimension, onProgress } = {}) {
+export async function readWorld(src, { region, dimension, onProgress, cacheSize = REGION_CACHE_BYTES } = {}) {
   src = asSource(src)
   const head = await sliceBytes(src, 0, 2)
   const world = head[0] === 0x50 && head[1] === 0x4b
     ? await readWorldZip(src, onProgress)
     : readRegionFile(src instanceof Uint8Array ? src : new Uint8Array(await src.arrayBuffer()), region)
+  world.cacheSize = cacheSize
   makeWorld(world)
   if (dimension && dimension !== world.dimension) await world.setDimension(dimension, onProgress)
   return world
@@ -347,7 +348,7 @@ async function regionData(world, kind, key) {
   cache.set(ck, bytes)
   let total = 0
   for (const b of cache.values()) total += b.byteLength
-  while ((cache.size > REGION_CACHE_MAX || total > REGION_CACHE_BYTES) && cache.size > 1) {
+  while ((cache.size > REGION_CACHE_MAX || total > world.cacheSize) && cache.size > 1) {
     const k0 = cache.keys().next().value
     total -= cache.get(k0).byteLength
     cache.delete(k0)

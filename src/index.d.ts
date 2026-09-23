@@ -95,6 +95,7 @@ export interface ReadOptions {
   region?: [number, number]
   dimension?: string
   onProgress?: Progress
+  cacheSize?: number
 }
 
 export function read(src: Source, options?: ReadOptions): Promise<Structure | World>

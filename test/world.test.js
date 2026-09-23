@@ -168,6 +168,20 @@ test("world zip: dimensions, name, chunks, entities, generated structures", asyn
   assert.deepEqual(nc.palette, [{ id: "minecraft:netherrack" }])
 })
 
+test("cacheSize caps the unpacked regions a world keeps", async () => {
+  const world = await read(worldZip())
+  await world.chunk(world.chunks[0])
+  assert.equal(world.regionCache.size, 2)
+  const small = await read(worldZip(), { cacheSize: 1 })
+  const { entities } = chunkBlocks(await small.chunk(small.chunks[0]))
+  assert.equal(entities.length, 1)
+  assert.equal(small.regionCache.size, 1)
+  await small.setDimension("the_nether")
+  await small.chunk(small.chunks[0])
+  assert.equal(small.cacheSize, 1)
+  assert.equal(small.regionCache.size, 1)
+})
+
 test("world zip accepts a Blob", async () => {
   const world = await read(new Blob([worldZip()]))
   assert.equal(world.name, "Test World")

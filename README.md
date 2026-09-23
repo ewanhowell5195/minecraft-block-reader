@@ -108,6 +108,7 @@ All options are optional:
 | `region` | A lone region file's coordinates as `[x, z]` (the `r.x.z.mca` numbers), defaulting to `[0, 0]` |
 | `dimension` | Worlds: the dimension to open on, instead of the overworld |
 | `onProgress` | Worlds: called with `(done, total)` while the regions are scanned |
+| `cacheSize` | Worlds: how many bytes of unpacked region files to keep for reuse, defaulting to 320MB |
 
 The format is worked out from the bytes. Gzip is unpacked wherever it turns up, and Bedrock block states are mapped as closely as they can be.
 

@@ -91,6 +91,7 @@ The full export list:
 |---|---|
 | [`read(src, options)`](#readsrc-options) | Reads any supported file. Structure files give a structure, saves give a world |
 | [`chunkBlocks(nbt, options)`](#worlds) | The blocks in a chunk, from its NBT |
+| [`chunkBiomes(nbt, options)`](#chunkgrid) | The biome of every 4x4x4 cell in a chunk, from its NBT |
 | [`readNBT(bytes, options)`](#nbt) | Reads NBT into an object |
 | [`parseState(str)`](#block-states) | A block state string as `{ id, properties }` |
 | [`normState(v)`](#block-states) | Converts an older block state shape to the current one |
@@ -173,6 +174,21 @@ at(3, 66, 7)   // null, air
 ```js
 blockEntities   // [{ x: 2493, y: 74, z: -1010, nbt: { id: "minecraft:beehive", … } }]
 ```
+
+`biomes` holds the chunk's biomes over the same y range, one cell per 4x4x4 blocks. A cell holds 0 when the chunk has no biome data there, or a palette index with 1 added:
+
+```js
+const { biomes } = await world.chunkGrid(c, { yMin: 60, yMax: 80 })
+
+const biomeAt = (x, y, z) => {
+  const cell = biomes.grid[((y >> 2) - (60 >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)]
+  return cell === 0 ? null : biomes.palette[cell - 1]
+}
+
+biomeAt(3, 64, 7)   // "minecraft:plains"
+```
+
+`chunkBiomes(nbt, { yMin, yMax })` gives the same `{ palette, grid }` for chunk NBT you already have.
 
 ### NBT
 

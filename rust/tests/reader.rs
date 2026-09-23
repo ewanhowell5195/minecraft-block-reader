@@ -380,6 +380,31 @@ fn a_chunk_reads_as_a_dense_grid() {
 }
 
 #[test]
+fn a_chunk_grid_carries_its_biomes() {
+    let mut nbt = one_section_chunk(vec![state("minecraft:stone")], None, 0);
+    let mut biomes = Compound::default();
+    biomes.insert("palette", Value::List(8, vec![s("minecraft:plains"), s("minecraft:desert")]));
+    // one bit per cell, cell 5 (x 1, z 1, y 0) is the desert
+    biomes.insert("data", Value::LongArray(vec![1 << 5]));
+    if let Some(Value::List(_, sections)) = nbt.entries.iter_mut().find(|(k, _)| k == "sections").map(|(_, v)| v) {
+        if let Some(Value::Compound(sc)) = sections.first_mut() {
+            sc.insert("biomes", Value::Compound(biomes));
+        }
+    }
+    let region = Region::new(region_bytes(3, &nbt));
+    let g = region.chunk_grid(3, 0, 15).unwrap();
+    assert_eq!(g.biome_palette, vec!["minecraft:plains", "minecraft:desert"]);
+    assert_eq!(g.biomes.len(), 64);
+    assert_eq!(g.biomes[5], 2);
+    assert!(g.biomes.iter().enumerate().all(|(i, &c)| c == if i == 5 { 2 } else { 1 }));
+
+    // a y range starting mid section keeps the cell rows it covers
+    let part = region.chunk_grid(3, 4, 15).unwrap();
+    assert_eq!(part.biomes.len(), 48);
+    assert_eq!(part.biomes[0], 1);
+}
+
+#[test]
 fn an_air_only_chunk_grid_is_empty() {
     let nbt = one_section_chunk(vec![state("minecraft:air")], None, 0);
     let region = Region::new(region_bytes(3, &nbt));

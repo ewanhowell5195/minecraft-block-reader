@@ -76,12 +76,13 @@ export async function regionHandle(bytes) {
 export async function chunkGridFast(handle, index, yMin, yMax) {
   const packed = handle.chunkGrid(index, yMin, yMax)
   if (!packed) return null
-  let palette, grid, extrasBytes, empty
+  let palette, grid, extrasBytes, empty, biomeGrid
   try {
     palette = JSON.parse(packed.palette)
     grid = packed.grid
     extrasBytes = packed.extras
     empty = packed.empty
+    biomeGrid = packed.biomes
   } finally {
     packed.free()
   }
@@ -89,7 +90,7 @@ export async function chunkGridFast(handle, index, yMin, yMax) {
   const blockEntities = extras.bn.map((nbt, i) => ({
     x: extras.bp[i * 3], y: extras.bp[i * 3 + 1], z: extras.bp[i * 3 + 2], nbt
   }))
-  return { palette, grid, blockEntities, empty }
+  return { palette, grid, blockEntities, empty, biomes: { palette: extras.bb ?? [], grid: biomeGrid } }
 }
 
 export function chunkExtentFast(handle, index, yMin, yMax) {

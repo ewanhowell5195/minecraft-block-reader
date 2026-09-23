@@ -1,12 +1,11 @@
 use crate::nbt::{inflate_zlib, read_nbt, Compound, Value};
 
 const KEEP: [&str; 6] = ["sections", "block_entities", "xPos", "zPos", "Entities", "Level"];
-const SKIP: [&str; 8] = [
+const SKIP: [&str; 7] = [
     "block_light",
     "sky_light",
     "BlockLight",
     "SkyLight",
-    "biomes",
     "Biomes",
     "Heightmaps",
     "Structures",

@@ -146,12 +146,14 @@ mod bindings {
             let mut extras = Compound::default();
             extras.insert("bp", Value::IntArray(pos));
             extras.insert("bn", Value::List(nbt::COMPOUND, nbt));
+            extras.insert("bb", Value::List(nbt::STRING, g.biome_palette.into_iter().map(Value::Str).collect()));
             let s = Structure { size: [0, 0, 0], palette: g.palette, blocks: Vec::new(), entities: Vec::new() };
             Some(PackedGridJs {
                 palette: out::palette_json(&s),
                 grid: g.grid,
                 extras: nbt::Writer::new().root(&extras),
                 empty: g.empty,
+                biomes: g.biomes,
             })
         }
 
@@ -184,6 +186,7 @@ mod bindings {
         grid: Vec<u16>,
         extras: Vec<u8>,
         empty: bool,
+        biomes: Vec<u8>,
     }
 
     #[wasm_bindgen(js_class = PackedGrid)]
@@ -195,6 +198,11 @@ mod bindings {
         #[wasm_bindgen(getter)]
         pub fn grid(&self) -> Vec<u16> {
             self.grid.clone()
+        }
+        /// biome cells, one per 4x4x4 blocks; their names sit in the extras as `bb`
+        #[wasm_bindgen(getter)]
+        pub fn biomes(&self) -> Vec<u8> {
+            self.biomes.clone()
         }
         /// nbt bytes: `bp` block entity positions, `bn` their nbt
         #[wasm_bindgen(getter)]

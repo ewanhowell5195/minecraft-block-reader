@@ -282,7 +282,7 @@ function readRegionFile(buf, region) {
 const CHUNK_KEEP = new Set(["sections", "block_entities", "xPos", "zPos", "Entities", "Level", "DataVersion"])
 // light and biome data hangs off the sections, below the root filter; the
 // capitalised names are the same data inside a pre-1.18 Level tag
-const CHUNK_SKIP = new Set(["block_light", "sky_light", "BlockLight", "SkyLight", "biomes", "Biomes", "Heightmaps", "Structures", "UpgradeData"])
+const CHUNK_SKIP = new Set(["block_light", "sky_light", "BlockLight", "SkyLight", "Biomes", "Heightmaps", "Structures", "UpgradeData"])
 
 // 1.13-1.17 chunks (DataVersion 1451+) are the palette format inside a Level
 // tag with older names; they fold to the current shape here. anything older is
@@ -618,14 +618,70 @@ async function readChunkGrid(world, chunk, { yMin = -Infinity, yMax = Infinity }
   return chunkGridJs(await readChunk(world, chunk), yMin, yMax)
 }
 
+// The biome of every 4x4x4 cell in the y range, `((y >> 2) - (yMin >> 2)) * 16
+// + (z >> 2) * 4 + (x >> 2)`, holding 0 when unknown or a one-based index into
+// `palette`.
+export function chunkBiomes(nbt, { yMin = -Infinity, yMax = Infinity } = {}) {
+  const sections = nbt?.sections ?? []
+  if (yMin === -Infinity || yMax === Infinity) {
+    const ys = sections.map(s => s.Y * 16).filter(Number.isFinite)
+    if (yMin === -Infinity) yMin = ys.length ? Math.min(...ys) : 0
+    if (yMax === Infinity) yMax = ys.length ? Math.max(...ys) + 15 : -1
+  }
+  const cyMin = yMin >> 2
+  const grid = new Uint8Array(16 * Math.max(0, (yMax >> 2) - cyMin + 1))
+  const palette = []
+  const palIdx = new Map()
+  for (const s of sections) {
+    const pal = s.biomes?.palette
+    if (!pal) continue
+    const sy = s.Y * 16
+    if (sy + 15 < yMin || sy > yMax) continue
+    const map = pal.map(e => {
+      const name = typeof e === "string" ? e : e?.[""] ?? ""
+      let i = palIdx.get(name)
+      if (i === undefined) {
+        i = palette.length + 1
+        palette.push(name)
+        palIdx.set(name, i)
+      }
+      return i
+    })
+    const cyLo = Math.max(0, yMin - sy) >> 2, cyHi = Math.min(15, yMax - sy) >> 2
+    const base = (sy >> 2) - cyMin
+    if (pal.length === 1) {
+      for (let cy = cyLo; cy <= cyHi; cy++) grid.fill(map[0], (base + cy) * 16, (base + cy) * 16 + 16)
+      continue
+    }
+    const data = s.biomes.data ?? []
+    const bits = Math.max(1, 32 - Math.clz32(pal.length - 1))
+    const mask = (1 << bits) - 1
+    const vpl = Math.floor(64 / bits)
+    for (let i = 0; i < 64; i++) {
+      const cy = i >> 4
+      if (cy < cyLo || cy > cyHi) continue
+      const li = Math.floor(i / vpl), off = (i % vpl) * bits
+      const lo = data[li * 2], hi = data[li * 2 + 1]
+      let v
+      if (off + bits <= 32) v = (lo >>> off) & mask
+      else if (off >= 32) v = (hi >>> (off - 32)) & mask
+      else v = ((lo >>> off) | (hi << (32 - off))) & mask
+      const gi = map[v]
+      if (gi) grid[(base + cy) * 16 + (i & 15)] = gi
+    }
+  }
+  return { palette, grid }
+}
+
 function chunkGridJs(nbt, yMin, yMax) {
   const height = Math.max(0, yMax - yMin + 1)
   const grid = new Uint16Array(256 * height)
   const palette = []
   const palIdx = new Map()
   const blockEntities = []
+  const biomes = chunkBiomes(nbt, { yMin, yMax })
   let empty = true
-  if (!nbt?.sections) return { palette, grid, blockEntities, empty }
+  if (!nbt?.sections) return { palette, grid, blockEntities, empty, biomes }
 
   for (const be of nbt.block_entities ?? []) {
     if (typeof be?.x !== "number" || be.y < yMin || be.y > yMax) continue
@@ -694,5 +750,5 @@ function chunkGridJs(nbt, yMin, yMax) {
       }
     }
   }
-  return { palette, grid, blockEntities, empty }
+  return { palette, grid, blockEntities, empty, biomes }
 }

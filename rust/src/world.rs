@@ -148,19 +148,91 @@ pub struct ChunkGrid {
     /// Absolute position and nbt, for the block entities inside the y range.
     pub block_entities: Vec<([i32; 3], Compound)>,
     pub empty: bool,
+    pub biome_palette: Vec<String>,
+    /// One cell per 4x4x4 blocks: `((y >> 2) - (y_min >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)`,
+    /// 0 when unknown or a one based index into `biome_palette`.
+    pub biomes: Vec<u8>,
 }
 
 impl Region {
     pub fn chunk_grid(&self, index: usize, y_min: i32, y_max: i32) -> Option<ChunkGrid> {
         let nbt = self.chunk(index)?;
         let height = (y_max - y_min + 1).max(0) as usize;
+        let cy_min = y_min >> 2;
+        let cell_rows = ((y_max >> 2) - cy_min + 1).max(0) as usize;
         let mut out = ChunkGrid {
             palette: Vec::new(),
             grid: vec![0u16; 256 * height],
             block_entities: Vec::new(),
             empty: true,
+            biome_palette: Vec::new(),
+            biomes: vec![0u8; 16 * cell_rows],
         };
         let Some(Value::List(_, sections)) = nbt.get("sections") else { return Some(out) };
+
+        let mut biome_index: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
+        for s in sections {
+            let Some(sc) = s.as_compound() else { continue };
+            let Some(bc) = sc.get("biomes").and_then(|v| v.as_compound()) else { continue };
+            let Some(Value::List(_, pal)) = bc.get("palette") else { continue };
+            let sy = sc.get("Y").and_then(|v| v.as_i64()).unwrap_or(0) as i32 * 16;
+            if sy + 15 < y_min || sy > y_max {
+                continue;
+            }
+            let map: Vec<u8> = pal
+                .iter()
+                .map(|e| {
+                    let name = match e {
+                        Value::Str(s) => s.clone(),
+                        Value::Compound(c) => c.entries.first().and_then(|(_, v)| v.as_str()).unwrap_or("").to_string(),
+                        _ => String::new(),
+                    };
+                    if let Some(i) = biome_index.get(&name) {
+                        return *i;
+                    }
+                    let i = out.biome_palette.len() as u8 + 1;
+                    out.biome_palette.push(name.clone());
+                    biome_index.insert(name, i);
+                    i
+                })
+                .collect();
+            let cy_lo = ((y_min - sy).max(0) >> 2) as usize;
+            let cy_hi = ((y_max - sy).min(15) >> 2) as usize;
+            let base = (sy >> 2) - cy_min;
+            let row = |cy: usize| (base + cy as i32) as usize * 16;
+            if pal.len() == 1 {
+                for cy in cy_lo..=cy_hi {
+                    out.biomes[row(cy)..row(cy) + 16].fill(map[0]);
+                }
+                continue;
+            }
+            let data: Vec<u32> = match bc.get("data") {
+                Some(Value::LongArray(a)) => crate::collector::words(a),
+                _ => Vec::new(),
+            };
+            let bits = (32 - ((pal.len() - 1) as u32).leading_zeros()).max(1);
+            let mask: u32 = (1u32 << bits) - 1;
+            let vpl = (64 / bits) as usize;
+            for i in 0..64usize {
+                let cy = i >> 4;
+                if cy < cy_lo || cy > cy_hi {
+                    continue;
+                }
+                let off = (i % vpl) as u32 * bits;
+                let lo = data.get(i / vpl * 2).copied().unwrap_or(0);
+                let hi = data.get(i / vpl * 2 + 1).copied().unwrap_or(0);
+                let v = if off + bits <= 32 {
+                    (lo >> off) & mask
+                } else if off >= 32 {
+                    (hi >> (off - 32)) & mask
+                } else {
+                    ((lo >> off) | (hi << (32 - off))) & mask
+                };
+                if let Some(&gi) = map.get(v as usize) {
+                    out.biomes[row(cy) + (i & 15)] = gi;
+                }
+            }
+        }
 
         if let Some(Value::List(_, items)) = nbt.get("block_entities") {
             for it in items {

@@ -62,6 +62,13 @@ export interface ChunkGrid {
   grid: Uint16Array
   blockEntities: { x: number, y: number, z: number, nbt: Record<string, unknown> }[]
   empty: boolean
+  biomes: ChunkBiomes
+}
+
+export interface ChunkBiomes {
+  palette: string[]
+  /** One cell per 4x4x4 blocks, `((y >> 2) - (yMin >> 2)) * 16 + (z >> 2) * 4 + (x >> 2)`, 0 when unknown or a one-based palette index. */
+  grid: Uint8Array
 }
 
 export type Progress = (done: number, total: number) => void
